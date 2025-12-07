@@ -620,7 +620,10 @@
                 <h2>🔧 Адміністратор</h2>
                 <div id="adminClock" style="color: #868e96; font-size: 0.9em; margin-top: 5px;"></div>
             </div>
-            <button onclick="logout()" class="logout-btn">Вийти</button>
+            <div style="display: flex; gap: 10px;">
+                <button class="action-btn" onclick="openHistoryModal(true)" style="background: #48dbfb; color: #2c3e50;">📋 Історія операцій</button>
+                <button onclick="logout()" class="logout-btn">Вийти</button>
+            </div>
         </div>
 
         <div style="padding: 20px;">
@@ -650,6 +653,12 @@
                 </small>
             </div>
 
+            <div class="form-group">
+                <label>Коментар адміністратора:</label>
+                <textarea id="adminBalanceComment" rows="3" placeholder="Вкажіть причину коригування" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #dee2e6;"></textarea>
+                <small style="color: #868e96; display: block; margin-top: 5px;">Коментар обов'язковий та буде показаний в історії операцій</small>
+            </div>
+
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button onclick="saveBalance()" class="btn-primary" style="flex: 1;">Зберегти</button>
                 <button onclick="closeEditBalanceModal()" class="btn-secondary" style="flex: 1;">Скасувати</button>
@@ -665,7 +674,13 @@
             <!-- Фільтри -->
             <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                    
+
+                    <!-- Кабінет (для адміна) -->
+                    <div id="historyCabinetFilterWrapper" style="display: none;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Кабінет:</label>
+                        <select id="historyCabinetFilter" onchange="filterHistory()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #dee2e6;"></select>
+                    </div>
+
                     <!-- Тип операції -->
                     <div>
                         <label style="display: block; margin-bottom: 5px; font-weight: 600;">Тип операції:</label>
@@ -837,6 +852,10 @@
         const API_URL = 'http://65.108.19.238/api';
         let sessionId = localStorage.getItem('sessionId') || null;
         let currentCabinet = null;
+        let isAdmin = false;
+        let adminName = null;
+        let historyViewCabinet = null;
+        let isHistoryAdminView = false;
         let currentOrderId = null;
         let currentRequestId = null;
         let receiptFiles = [];
@@ -879,14 +898,17 @@
                 });
                 
                 const data = await response.json();
-                
+
                 if (data.success) {
                     currentCabinet = data.cabinet;
                     sessionId = data.sessionId;
-                    
+                    isAdmin = data.cabinet.startsWith('ADMIN');
+                    adminName = isAdmin ? data.cabinet : null;
+                    historyViewCabinet = isAdmin ? 'all' : data.cabinet;
+
                     localStorage.setItem('cabinet', data.cabinet);
                     localStorage.setItem('sessionId', sessionId);
-                    
+
                     // Запускаємо heartbeat
                     startHeartbeat();
                     
@@ -899,7 +921,7 @@
                         );
                     }
                     
-                    if (data.cabinet.startsWith('ADMIN')) {
+                    if (isAdmin) {
                         selectAdminPanel();
                     } else {
                         selectCabinet(data.cabinet);
@@ -926,7 +948,9 @@
         function selectAdminPanel() {
             document.getElementById('loginScreen').style.display = 'none';
             document.getElementById('adminInterface').style.display = 'block';
-            
+            isAdmin = true;
+            historyViewCabinet = 'all';
+
             // Запуск годинника
             updateAdminClock();
             clockInterval = setInterval(updateAdminClock, 1000);
@@ -1060,14 +1084,21 @@
         function closeEditBalanceModal() {
             document.getElementById('editBalanceModal').style.display = 'none';
             currentEditBalanceId = null;
+            document.getElementById('adminBalanceComment').value = '';
         }
 
         // Зберегти новий баланс
         async function saveBalance() {
             const newAmount = document.getElementById('newBalanceAmount').value;
-            
+            const adminComment = document.getElementById('adminBalanceComment').value.trim();
+
             if (newAmount === '' || isNaN(newAmount)) {
                 alert('Введіть коректну суму');
+                return;
+            }
+
+            if (!adminComment) {
+                alert('Коментар є обов\'язковим');
                 return;
             }
 
@@ -1075,7 +1106,11 @@
                 const response = await fetch(`${API_URL}/admin/balances/${currentEditBalanceId}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount: parseFloat(newAmount) })
+                    body: JSON.stringify({
+                        amount: parseFloat(newAmount),
+                        admin_name: adminName,
+                        comment: adminComment
+                    })
                 });
 
                 const data = await response.json();
@@ -1098,11 +1133,28 @@
 
         let allHistory = [];
 
+        function setHistoryCabinetFilterOptions() {
+            const wrapper = document.getElementById('historyCabinetFilterWrapper');
+            const select = document.getElementById('historyCabinetFilter');
+
+            if (isHistoryAdminView) {
+                wrapper.style.display = 'block';
+                select.innerHTML = '<option value="all">Всі кабінети</option>' +
+                    cabinets.map(c => `<option value="${c}">${c}</option>`).join('');
+                select.value = historyViewCabinet || 'all';
+            } else {
+                wrapper.style.display = 'none';
+            }
+        }
+
         // Відкрити модальне вікно історії
-        async function openHistoryModal() {
-            console.log('Opening history modal for cabinet:', currentCabinet);
+        async function openHistoryModal(forAdmin = false) {
+            isHistoryAdminView = forAdmin && isAdmin;
+            historyViewCabinet = isHistoryAdminView ? 'all' : currentCabinet;
+            setHistoryCabinetFilterOptions();
+
             document.getElementById('historyModal').style.display = 'flex';
-            document.getElementById('historyList').innerHTML = 
+            document.getElementById('historyList').innerHTML =
                 '<p style="text-align: center; color: #868e96; padding: 40px;">⏳ Завантаження...</p>';
             resetHistoryFilters();
             await loadHistory();
@@ -1113,28 +1165,47 @@
             document.getElementById('historyModal').style.display = 'none';
         }
 
+        function operationHasCabinet(item, cabinet) {
+            if (!cabinet || cabinet === 'all') return true;
+
+            if (item.operation_type === 'order' || item.operation_type === 'withdrawal') {
+                return item.from_cabinet === cabinet || item.to_cabinet === cabinet;
+            }
+
+            if (item.operation_type === 'balance_adjustment') {
+                return item.cabinet_from === cabinet || item.cabinet_to === cabinet;
+            }
+
+            return false;
+        }
+
         // Завантажити історію
         async function loadHistory() {
             try {
-                const response = await fetch(`${API_URL}/history/${currentCabinet}`);
-                
+                const cabinetParam = isHistoryAdminView && historyViewCabinet && historyViewCabinet !== 'all'
+                    ? `?cabinet=${encodeURIComponent(historyViewCabinet)}`
+                    : '';
+                const endpoint = isHistoryAdminView
+                    ? `${API_URL}/admin/history${cabinetParam}`
+                    : `${API_URL}/history/${currentCabinet}`;
+
+                const response = await fetch(endpoint);
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 allHistory = await response.json();
-                
-                console.log('History loaded:', allHistory.length, 'items');
-                
+
                 if (allHistory.length === 0) {
-                    document.getElementById('historyList').innerHTML = 
+                    document.getElementById('historyList').innerHTML =
                         '<p style="text-align: center; color: #868e96; padding: 40px;">📭 Поки що немає завершених операцій.<br><br>Історія буде доступна після оплати ордерів або підтвердження виводів.</p>';
                 } else {
                     filterHistory();
                 }
             } catch (error) {
                 console.error('Error loading history:', error);
-                document.getElementById('historyList').innerHTML = 
+                document.getElementById('historyList').innerHTML =
                     `<p style="text-align: center; color: #e74c3c; padding: 40px;">
                         ❌ Помилка завантаження історії<br><br>
                         <small>${error.message}</small><br><br>
@@ -1148,8 +1219,17 @@
             const type = document.getElementById('historyType').value;
             const dateFrom = document.getElementById('historyDateFrom').value;
             const dateTo = document.getElementById('historyDateTo').value;
+            const selectedCabinet = isHistoryAdminView
+                ? document.getElementById('historyCabinetFilter').value
+                : historyViewCabinet;
+
+            historyViewCabinet = selectedCabinet;
 
             let filtered = [...allHistory];
+
+            if (isHistoryAdminView && selectedCabinet && selectedCabinet !== 'all') {
+                filtered = filtered.filter(item => operationHasCabinet(item, selectedCabinet));
+            }
 
             // Фільтр по типу
             if (type === 'orders') {
@@ -1173,6 +1253,7 @@
             displayHistory(filtered);
         }
 
+        
         // Відобразити історію
         function displayHistory(history) {
             const container = document.getElementById('historyList');
@@ -1183,6 +1264,7 @@
             }
 
             let html = '<div style="display: grid; gap: 15px;">';
+            const contextCabinet = historyViewCabinet && historyViewCabinet !== 'all' ? historyViewCabinet : null;
 
             history.forEach(item => {
                 const date = new Date(item.created_at);
@@ -1197,48 +1279,44 @@
                 });
 
                 if (item.operation_type === 'order') {
-                    // Ордер
-                    const isIncoming = item.to_cabinet === currentCabinet;
-                    const otherCabinet = isIncoming ? item.from_cabinet : item.to_cabinet;
-                    const direction = isIncoming ? '📥 Вхідний' : '📤 Вихідний';
-                    const directionColor = isIncoming ? '#27ae60' : '#3498db';
-                    
-                    // Квитанції
+                    const isIncoming = contextCabinet ? item.to_cabinet === contextCabinet : false;
+                    const otherCabinet = contextCabinet
+                        ? (isIncoming ? item.from_cabinet : item.to_cabinet)
+                        : `${item.from_cabinet} → ${item.to_cabinet}`;
+                    let direction = '🔄 Ордер';
+                    let directionColor = '#8e44ad';
+
+                    if (contextCabinet) {
+                        direction = isIncoming ? '📥 Вхідний' : '📤 Вихідний';
+                        directionColor = isIncoming ? '#27ae60' : '#3498db';
+                    }
+
                     let receiptsHtml = '';
                     if (item.receipt_files) {
                         try {
-                            console.log('Receipt files raw:', item.receipt_files);
-                            console.log('Receipt files type:', typeof item.receipt_files);
-                            
                             let receipts = [];
-                            
-                            // Перевіряємо чи це JSON масив чи один base64 рядок
+
                             if (typeof item.receipt_files === 'string') {
                                 if (item.receipt_files.startsWith('[')) {
-                                    // Це JSON масив
                                     receipts = JSON.parse(item.receipt_files);
                                 } else if (item.receipt_files.startsWith('data:image')) {
-                                    // Це один base64 рядок
                                     receipts = [item.receipt_files];
                                 } else if (item.receipt_files.startsWith('/uploads')) {
-                                    // Це один URL
                                     receipts = [item.receipt_files];
                                 }
                             } else if (Array.isArray(item.receipt_files)) {
                                 receipts = item.receipt_files;
                             }
-                            
-                            console.log('Parsed receipts:', receipts);
-                            
+
                             if (receipts.length > 0) {
                                 receiptsHtml = `
                                     <div style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 6px;">
                                         <div style="font-weight: 600; margin-bottom: 8px; color: #27ae60;">📎 Квитанції (${receipts.length}):</div>
                                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                                             ${receipts.map((receipt, idx) => `
-                                                <a href="${receipt}" target="_blank" 
-                                                   style="display: inline-block; padding: 6px 12px; background: white; 
-                                                          border: 1px solid #27ae60; border-radius: 6px; 
+                                                <a href="${receipt}" target="_blank"
+                                                   style="display: inline-block; padding: 6px 12px; background: white;
+                                                          border: 1px solid #27ae60; border-radius: 6px;
                                                           color: #27ae60; text-decoration: none; font-size: 0.85em;
                                                           transition: all 0.2s;">
                                                     🖼️ Квитанція ${idx + 1}
@@ -1273,64 +1351,69 @@
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-top: 10px;">
                                 <div style="color: #495057; font-size: 0.95em; margin-bottom: 8px;">
-                                    <strong>${isIncoming ? 'Від:' : 'До:'}</strong> ${otherCabinet}
+                                    ${contextCabinet ? `<strong>${isIncoming ? 'Від:' : 'До:'}</strong> ${otherCabinet}` : `Кабінети: <strong>${item.from_cabinet}</strong> → <strong>${item.to_cabinet}</strong>`}
                                 </div>
-                                
+
                                 ${item.amount_local ? `
                                     <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
                                         💵 Сума: <strong>${item.amount_local} ${item.order_type === 'card' || item.order_type === 'iban' ? 'UAH' : 'ARS'}</strong>
                                     </div>
                                 ` : ''}
-                                
+
                                 ${item.card_number ? `
                                     <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
                                         💳 Картка: <code>${item.card_number}</code>
                                     </div>
                                 ` : ''}
-                                
+
                                 ${item.iban ? `
                                     <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
                                         🏦 IBAN: <code>${item.iban}</code>
                                     </div>
                                 ` : ''}
-                                
+
                                 ${item.tax_number ? `
                                     <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
                                         🆔 Tax Number: <code>${item.tax_number}</code>
                                     </div>
                                 ` : ''}
-                                
+
                                 ${item.cvu ? `
                                     <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
                                         🔢 CVU: <code>${item.cvu}</code>
                                     </div>
                                 ` : ''}
-                                
+
                                 ${item.fio ? `
                                     <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
                                         👤 ПІБ: <strong>${item.fio}</strong>
                                     </div>
                                 ` : ''}
-                                
+
                                 ${item.comment ? `
                                     <div style="color: #495057; font-size: 0.9em; margin-top: 8px; padding-top: 8px; border-top: 1px solid #dee2e6;">
                                         💬 Коментар: <em>${item.comment}</em>
                                     </div>
                                 ` : ''}
                             </div>
-                            
+
                             ${receiptsHtml}
                         </div>
                     `;
-                } else {
-                    // Вивід
-                    const isRequested = item.from_cabinet === currentCabinet;
-                    const otherCabinet = isRequested ? item.to_cabinet : item.from_cabinet;
-                    const direction = isRequested ? '💸 Запрошений вивід' : '✅ Підтверджений вивід';
-                    const directionColor = isRequested ? '#e67e22' : '#27ae60';
+                } else if (item.operation_type === 'withdrawal') {
+                    const isRequested = contextCabinet ? item.from_cabinet === contextCabinet : false;
+                    const otherCabinet = contextCabinet
+                        ? (isRequested ? item.to_cabinet : item.from_cabinet)
+                        : `${item.from_cabinet} → ${item.to_cabinet}`;
+                    const direction = contextCabinet
+                        ? (isRequested ? '💸 Запрошений вивід' : '✅ Підтверджений вивід')
+                        : '💸 Вивід';
+                    const directionColor = contextCabinet
+                        ? (isRequested ? '#e67e22' : '#27ae60')
+                        : '#16a085';
 
                     html += `
                         <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid ${directionColor};">
@@ -1351,9 +1434,43 @@
                             </div>
                             <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin-top: 10px;">
                                 <div style="color: #495057; font-size: 0.95em; margin-bottom: 5px;">
-                                    ${isRequested ? `Через: <strong>${otherCabinet}</strong>` : `Від: <strong>${otherCabinet}</strong>`}
+                                    ${contextCabinet
+                                        ? (isRequested ? `Через: <strong>${otherCabinet}</strong>` : `Від: <strong>${otherCabinet}</strong>`)
+                                        : `Кабінети: <strong>${item.from_cabinet}</strong> → <strong>${item.to_cabinet}</strong>`}
                                 </div>
                                 ${item.txid ? `<div style="color: #495057; font-size: 0.85em; word-break: break-all;">TxID: <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 0.9em;">${item.txid}</code></div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                } else if (item.operation_type === 'balance_adjustment') {
+                    const delta = parseFloat(item.amount_new) - parseFloat(item.amount_old);
+                    const deltaColor = delta >= 0 ? '#27ae60' : '#e74c3c';
+
+                    html += `
+                        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #34495e;">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                                <div>
+                                    <div style="font-weight: 700; font-size: 1.1em; color: #34495e;">
+                                        ⚖️ Корекція балансу
+                                    </div>
+                                    <div style="color: #868e96; font-size: 0.9em; margin-top: 5px;">
+                                        ${dateStr} о ${timeStr}
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-weight: 600; color: #2c3e50;">${item.cabinet_from} ↔ ${item.cabinet_to}</div>
+                                    <div style="font-size: 1.1em; font-weight: 700; color: ${deltaColor}; margin-top: 4px;">
+                                        ${delta >= 0 ? '+' : '-'}${Math.abs(delta).toFixed(2)} USDT
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin-top: 10px;">
+                                <div style="color: #495057; font-size: 0.95em; margin-bottom: 6px;">
+                                    👮‍♂️ Адміністратор: <strong>${item.admin_name}</strong>
+                                </div>
+                                <div style="color: #495057; font-size: 0.9em;">Було: <strong>${parseFloat(item.amount_old).toFixed(2)} USDT</strong></div>
+                                <div style="color: #495057; font-size: 0.9em;">Стало: <strong>${parseFloat(item.amount_new).toFixed(2)} USDT</strong></div>
+                                ${item.comment ? `<div style="color: #495057; font-size: 0.9em; margin-top: 8px; padding-top: 8px; border-top: 1px solid #dee2e6;">💬 Коментар: <em>${item.comment}</em></div>` : ''}
                             </div>
                         </div>
                     `;
@@ -1390,7 +1507,11 @@
 
                     if (data.success && data.cabinet === savedCabinet) {
                         // Автоматичний вхід
-                        if (savedCabinet === 'ADMIN') {
+                        isAdmin = savedCabinet.startsWith('ADMIN');
+                        adminName = isAdmin ? savedCabinet : null;
+                        historyViewCabinet = isAdmin ? 'all' : savedCabinet;
+
+                        if (isAdmin) {
                             selectAdminPanel();
                         } else {
                             selectCabinet(savedCabinet);
@@ -1752,7 +1873,10 @@
             localStorage.removeItem('sessionId');
             sessionId = null;
             currentCabinet = null;
-            
+            adminName = null;
+            isAdmin = false;
+            historyViewCabinet = null;
+
             if (heartbeatInterval) {
                 clearInterval(heartbeatInterval);
             }
