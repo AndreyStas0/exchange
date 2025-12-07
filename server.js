@@ -5,7 +5,12 @@ const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const util = require('util');
+const { exec } = require('child_process');
 require('dotenv').config();
+
+const execAsync = util.promisify(exec);
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8401038127:AAFuocGyyMpZnI86cum61-PPyQvGWmfJKgk';
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || '-1003334842127';
@@ -58,6 +63,27 @@ function getClientIP(req) {
         || req.connection.remoteAddress
         || req.socket.remoteAddress
         || 'unknown';
+}
+
+async function getDiskUsage() {
+    try {
+        const { stdout } = await execAsync("df -k --output=size,avail / | tail -1");
+        const [totalKb, freeKb] = stdout.trim().split(/\s+/).map(val => parseInt(val, 10));
+
+        if (Number.isFinite(totalKb) && Number.isFinite(freeKb)) {
+            const totalBytes = totalKb * 1024;
+            const freeBytes = freeKb * 1024;
+            const usedBytes = totalBytes - freeBytes;
+            const usedPercent = totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : 0;
+
+            return { totalBytes, freeBytes, usedBytes, usedPercent };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error getting disk usage:', error);
+        return null;
+    }
 }
 
 // Створюємо папку для зображень якщо не існує
@@ -418,6 +444,36 @@ app.get('/api/admin/history', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Помилка отримання історії' });
+    }
+});
+
+app.get('/api/admin/system-stats', async (req, res) => {
+    try {
+        const cores = os.cpus()?.length || 1;
+        const load = os.loadavg()[0] || 0;
+        const cpuPercent = Math.min(100, Math.max(0, Math.round((load / cores) * 100)));
+
+        const totalMem = os.totalmem();
+        const freeMem = os.freemem();
+        const usedMem = totalMem - freeMem;
+        const memUsedPercent = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+
+        const disk = await getDiskUsage();
+
+        res.json({
+            cpu: { loadPercent: cpuPercent, cores },
+            memory: {
+                totalBytes: totalMem,
+                freeBytes: freeMem,
+                usedBytes: usedMem,
+                usedPercent: memUsedPercent
+            },
+            disk: disk || { totalBytes: null, freeBytes: null, usedBytes: null, usedPercent: null },
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Error getting system stats:', err);
+        res.status(500).json({ error: 'Помилка отримання статистики сервера' });
     }
 });
 
