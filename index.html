@@ -796,11 +796,13 @@
     <!-- Головний інтерфейс -->
     <div class="main-interface" id="mainInterface">
         <div class="header">
-            <div>
-                <h2 id="currentCabinet"></h2>
-                <div id="currentDateTime" style="font-size: 0.9em; color: #868e96; margin-top: 5px;"></div>
+            <div class="header-top-row">
+                <div>
+                    <h2 id="currentCabinet"></h2>
+                    <div id="currentDateTime" style="font-size: 0.9em; color: #868e96; margin-top: 5px;"></div>
+                </div>
+                <button class="logout-btn" onclick="logout()">Вийти</button>
             </div>
-            <button class="logout-btn" onclick="logout()">Вийти</button>
         </div>
 
         <div class="debt-info" id="debtInfo"></div>
