@@ -1620,43 +1620,45 @@
             filterHistory();
         }
 
-        // Перевірка при завантаженні сторінки
-        window.addEventListener('load', async () => {
-            const savedKey = localStorage.getItem('accessKey');
+        async function restoreSessionIfPossible() {
             const savedCabinet = localStorage.getItem('cabinet');
+            const savedSession = localStorage.getItem('sessionId');
 
-            if (savedKey && savedCabinet) {
-                try {
-                    // Перевіряємо чи ключ все ще валідний
-                    const response = await fetch(`${API_URL}/auth/login`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key: savedKey })
-                    });
+            if (!savedCabinet || !savedSession) return;
 
-                    const data = await response.json();
+            try {
+                const response = await fetch(`${API_URL}/auth/heartbeat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: savedSession })
+                });
 
-                    if (data.success && data.cabinet === savedCabinet) {
-                        // Автоматичний вхід
-                        isAdmin = savedCabinet.startsWith('ADMIN');
-                        adminName = isAdmin ? savedCabinet : null;
-                        historyViewCabinet = isAdmin ? 'all' : savedCabinet;
+                const data = await response.json();
 
-                        if (isAdmin) {
-                            selectAdminPanel();
-                        } else {
-                            selectCabinet(savedCabinet);
-                        }
+                if (data.valid) {
+                    sessionId = savedSession;
+                    isAdmin = savedCabinet.startsWith('ADMIN');
+                    adminName = isAdmin ? savedCabinet : null;
+                    historyViewCabinet = isAdmin ? 'all' : savedCabinet;
+
+                    startHeartbeat();
+
+                    if (isAdmin) {
+                        selectAdminPanel();
                     } else {
-                        // Ключ більше не валідний - очищаємо
-                        localStorage.removeItem('accessKey');
-                        localStorage.removeItem('cabinet');
+                        selectCabinet(savedCabinet);
                     }
-                } catch (error) {
-                    console.error('Auto-login error:', error);
+                } else {
+                    localStorage.removeItem('sessionId');
+                    localStorage.removeItem('cabinet');
                 }
+            } catch (error) {
+                console.error('Auto-login error:', error);
             }
-        });
+        }
+
+        // Перевірка при завантаженні сторінки
+        window.addEventListener('load', restoreSessionIfPossible);
 
         // Enter для входу
         document.addEventListener('DOMContentLoaded', () => {
