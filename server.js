@@ -5,10 +5,86 @@ const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const util = require('util');
+const { exec } = require('child_process');
 require('dotenv').config();
+
+const execAsync = util.promisify(exec);
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8401038127:AAFuocGyyMpZnI86cum61-PPyQvGWmfJKgk';
+const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || '-1003334842127';
+const TELEGRAM_LOGIN_BOT_TOKEN = process.env.TELEGRAM_LOGIN_BOT_TOKEN || TELEGRAM_BOT_TOKEN;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+let telegramNotificationsDisabledReason = null;
+
+async function sendTelegramNotification(message) {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) {
+        console.log('⚠️ Telegram not configured');
+        return;
+    }
+
+    if (telegramNotificationsDisabledReason) {
+        console.log('⚠️ Telegram notifications disabled:', telegramNotificationsDisabledReason);
+        return;
+    }
+
+    try {
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: TELEGRAM_CHANNEL_ID,
+                text: message,
+                parse_mode: 'HTML'
+            })
+        });
+
+        if (!response.ok) {
+            const body = await response.text();
+            console.error('Telegram API error:', body);
+
+            if (response.status === 401 || response.status === 403) {
+                telegramNotificationsDisabledReason = 'Authentication failed. Check TELEGRAM_BOT_TOKEN/TELEGRAM_CHANNEL_ID configuration.';
+            }
+        }
+    } catch (err) {
+        console.error('Error sending Telegram notification:', err);
+    }
+}
+
+function getClientIP(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0].trim()
+        || req.headers['x-real-ip']
+        || req.connection.remoteAddress
+        || req.socket.remoteAddress
+        || 'unknown';
+}
+
+async function getDiskUsage() {
+    try {
+        const { stdout } = await execAsync("df -k --output=size,avail / | tail -1");
+        const [totalKb, freeKb] = stdout.trim().split(/\s+/).map(val => parseInt(val, 10));
+
+        if (Number.isFinite(totalKb) && Number.isFinite(freeKb)) {
+            const totalBytes = totalKb * 1024;
+            const freeBytes = freeKb * 1024;
+            const usedBytes = totalBytes - freeBytes;
+            const usedPercent = totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : 0;
+
+            return { totalBytes, freeBytes, usedBytes, usedPercent };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error getting disk usage:', error);
+        return null;
+    }
+}
 
 // Створюємо папку для зображень якщо не існує
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -140,6 +216,57 @@ async function initDatabase() {
             )
         `);
 
+        // Таблиця логів адміністратора
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS admin_logs (
+                id SERIAL PRIMARY KEY,
+                admin_name VARCHAR(50) NOT NULL,
+                action_type VARCHAR(50) NOT NULL,
+                cabinet_from VARCHAR(50),
+                cabinet_to VARCHAR(50),
+                amount_old DECIMAL(10, 2),
+                amount_new DECIMAL(10, 2),
+                comment TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
+        // Додаємо відсутні колонки (для зворотної сумісності)
+        await client.query(
+            "ALTER TABLE admin_logs ADD COLUMN IF NOT EXISTS cabinet_from VARCHAR(50)"
+        );
+        await client.query(
+            "ALTER TABLE admin_logs ADD COLUMN IF NOT EXISTS cabinet_to VARCHAR(50)"
+        );
+        await client.query(
+            "ALTER TABLE admin_logs ADD COLUMN IF NOT EXISTS comment TEXT"
+        );
+
+        // Таблиця активних сесій
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS sessions (
+                id SERIAL PRIMARY KEY,
+                cabinet VARCHAR(50) NOT NULL,
+                session_id VARCHAR(255) UNIQUE NOT NULL,
+                ip_address VARCHAR(45),
+                user_agent TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                last_activity TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
+        // Таблиця логування входів
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS login_logs (
+                id SERIAL PRIMARY KEY,
+                cabinet VARCHAR(50) NOT NULL,
+                ip_address VARCHAR(45),
+                user_agent TEXT,
+                status VARCHAR(50),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
         console.log('✅ База даних ініціалізована');
     } catch (err) {
         console.error('❌ Помилка ініціалізації бази даних:', err);
@@ -245,14 +372,108 @@ app.get('/api/history/:cabinet', async (req, res) => {
             [cabinet]
         );
 
+        // Отримуємо зміни балансів від адміна
+        const balanceChangesResult = await pool.query(
+            `SELECT 'balance_adjustment' as operation_type, id, admin_name, cabinet_from, cabinet_to,
+                    amount_old, amount_new, comment, created_at
+             FROM admin_logs
+             WHERE action_type = 'balance_update' AND (cabinet_from = $1 OR cabinet_to = $1)
+             ORDER BY created_at DESC`,
+            [cabinet]
+        );
+
         // Об'єднуємо та сортуємо за датою
-        const history = [...ordersResult.rows, ...withdrawalsResult.rows]
+        const history = [...ordersResult.rows, ...withdrawalsResult.rows, ...balanceChangesResult.rows]
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         res.json(history);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Помилка отримання історії' });
+    }
+});
+
+// Отримати історію операцій для адміна (всі кабінети)
+app.get('/api/admin/history', async (req, res) => {
+    const { cabinet } = req.query;
+
+    const cabinetFilter = cabinet && cabinet !== 'all' ? cabinet : null;
+
+    try {
+        const ordersQuery = {
+            text: `SELECT 'order' as operation_type, id, from_cabinet, to_cabinet,
+                          amount_usdt as amount, amount_local,
+                          card_number, iban, tax_number, cvu, full_name as fio,
+                          created_at, status, type as order_type,
+                          receipts as receipt_files, note as comment
+                   FROM orders
+                   ${cabinetFilter ? 'WHERE from_cabinet = $1 OR to_cabinet = $1' : ''}
+                   ORDER BY created_at DESC`,
+            values: cabinetFilter ? [cabinetFilter] : []
+        };
+
+        const withdrawalsQuery = {
+            text: `SELECT 'withdrawal' as operation_type, id, from_cabinet, to_cabinet, amount,
+                          created_at, status, txid
+                   FROM withdrawals
+                   ${cabinetFilter ? 'WHERE from_cabinet = $1 OR to_cabinet = $1' : ''}
+                   ORDER BY created_at DESC`,
+            values: cabinetFilter ? [cabinetFilter] : []
+        };
+
+        const balanceChangesQuery = {
+            text: `SELECT 'balance_adjustment' as operation_type, id, admin_name, cabinet_from, cabinet_to,
+                          amount_old, amount_new, comment, created_at
+                   FROM admin_logs
+                   WHERE action_type = 'balance_update'
+                   ${cabinetFilter ? 'AND (cabinet_from = $1 OR cabinet_to = $1)' : ''}
+                   ORDER BY created_at DESC`,
+            values: cabinetFilter ? [cabinetFilter] : []
+        };
+
+        const [ordersResult, withdrawalsResult, balanceChangesResult] = await Promise.all([
+            pool.query(ordersQuery),
+            pool.query(withdrawalsQuery),
+            pool.query(balanceChangesQuery)
+        ]);
+
+        const history = [...ordersResult.rows, ...withdrawalsResult.rows, ...balanceChangesResult.rows]
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        res.json(history);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Помилка отримання історії' });
+    }
+});
+
+app.get('/api/admin/system-stats', async (req, res) => {
+    try {
+        const cores = os.cpus()?.length || 1;
+        const load = os.loadavg()[0] || 0;
+        const cpuPercent = Math.min(100, Math.max(0, Math.round((load / cores) * 100)));
+
+        const totalMem = os.totalmem();
+        const freeMem = os.freemem();
+        const usedMem = totalMem - freeMem;
+        const memUsedPercent = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+
+        const disk = await getDiskUsage();
+
+        res.json({
+            cpu: { loadPercent: cpuPercent, cores },
+            memory: {
+                totalBytes: totalMem,
+                freeBytes: freeMem,
+                usedBytes: usedMem,
+                usedPercent: memUsedPercent
+            },
+            disk: disk || { totalBytes: null, freeBytes: null, usedBytes: null, usedPercent: null },
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Error getting system stats:', err);
+        res.status(500).json({ error: 'Помилка отримання статистики сервера' });
     }
 });
 
@@ -318,13 +539,46 @@ app.get('/api/admin/balances/all', async (req, res) => {
 // Оновити баланс (для адміна)
 app.patch('/api/admin/balances/:id', async (req, res) => {
     const { id } = req.params;
-    const { amount } = req.body;
-    
+    const { amount, admin_name, comment } = req.body;
+
+    if (!admin_name) {
+        return res.status(400).json({ error: 'Не вказано адміністратора' });
+    }
+
+    if (!comment || !comment.trim()) {
+        return res.status(400).json({ error: 'Коментар є обов\'язковим' });
+    }
+
     try {
+        const balanceResult = await pool.query(
+            'SELECT * FROM balances WHERE id = $1',
+            [id]
+        );
+
+        if (balanceResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Баланс не знайдено' });
+        }
+
+        const balance = balanceResult.rows[0];
+
         await pool.query(
             'UPDATE balances SET amount = $1 WHERE id = $2',
             [amount, id]
         );
+
+        await pool.query(
+            `INSERT INTO admin_logs (admin_name, action_type, cabinet_from, cabinet_to, amount_old, amount_new, comment)
+             VALUES ($1, 'balance_update', $2, $3, $4, $5, $6)`,
+            [
+                admin_name,
+                balance.cabinet_from,
+                balance.cabinet_to,
+                balance.amount,
+                amount,
+                comment.trim()
+            ]
+        );
+
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -660,31 +914,86 @@ app.use(express.static('public'));
 // ACCESS KEY AUTHENTICATION
 // ============================================
 
-// Авторизація по ключу (перевірка в БД)
+// Авторизація по ключу (перевірка в БД) з унікальними сесіями та відстеженням IP
 app.post('/api/auth/login', async (req, res) => {
     const { key } = req.body;
-    
+    const ipAddress = getClientIP(req);
+    const userAgent = req.headers['user-agent'] || '';
+
     try {
         // Шукаємо ключ в базі даних
         const result = await pool.query(
             'SELECT * FROM access_keys WHERE access_key = $1 AND is_active = true',
             [key]
         );
-        
+
         if (result.rows.length > 0) {
             const keyData = result.rows[0];
-            
+            const cabinet = keyData.cabinet;
+
+            // Завершуємо попередні сесії цього кабінету
+            await pool.query('DELETE FROM sessions WHERE cabinet = $1', [cabinet]);
+
+            // Перевіряємо останній успішний вхід для виявлення зміни IP
+            const lastLogin = await pool.query(
+                `SELECT ip_address FROM login_logs
+                 WHERE cabinet = $1 AND status = 'success'
+                 ORDER BY created_at DESC LIMIT 1`,
+                [cabinet]
+            );
+
+            let ipChanged = false;
+            if (lastLogin.rows.length > 0 && lastLogin.rows[0].ip_address !== ipAddress) {
+                ipChanged = true;
+
+                const message = `
+🔐 <b>НОВА АВТОРИЗАЦІЯ З ІНШОГО IP</b>
+
+👤 Кабінет: <code>${cabinet}</code>
+🌐 Попередній IP: <code>${lastLogin.rows[0].ip_address}</code>
+🌐 Новий IP: <code>${ipAddress}</code>
+🕐 Час: ${new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Kiev' })}
+
+${userAgent ? `📱 Пристрій: ${userAgent.substring(0, 100)}` : ''}
+                `.trim();
+
+                await sendTelegramNotification(message);
+            }
+
+            // Створюємо нову сесію
+            const sessionId = crypto.randomBytes(32).toString('hex');
+            await pool.query(
+                `INSERT INTO sessions (cabinet, session_id, ip_address, user_agent)
+                 VALUES ($1, $2, $3, $4)`,
+                [cabinet, sessionId, ipAddress, userAgent]
+            );
+
+            // Логуємо успішний вхід
+            await pool.query(
+                `INSERT INTO login_logs (cabinet, ip_address, user_agent, status)
+                 VALUES ($1, $2, $3, $4)`,
+                [cabinet, ipAddress, userAgent, 'success']
+            );
+
             // Оновлюємо час останнього використання
             await pool.query(
                 'UPDATE access_keys SET last_used = NOW() WHERE id = $1',
                 [keyData.id]
             );
-            
+
             res.json({
                 success: true,
-                cabinet: keyData.cabinet
+                cabinet: cabinet,
+                sessionId: sessionId,
+                ipChanged: ipChanged
             });
         } else {
+            await pool.query(
+                `INSERT INTO login_logs (cabinet, ip_address, user_agent, status)
+                 VALUES ($1, $2, $3, $4)`,
+                ['unknown', ipAddress, userAgent, 'invalid_key']
+            );
+
             res.json({
                 success: false,
                 error: 'Невірний ключ доступу'
@@ -693,6 +1002,40 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Помилка сервера' });
+    }
+});
+
+// Вихід (видалення сесії)
+app.post('/api/auth/logout', async (req, res) => {
+    const { sessionId } = req.body;
+
+    try {
+        await pool.query('DELETE FROM sessions WHERE session_id = $1', [sessionId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Помилка виходу' });
+    }
+});
+
+// Перевірка активності сесії (heartbeat)
+app.post('/api/auth/heartbeat', async (req, res) => {
+    const { sessionId } = req.body;
+
+    try {
+        const result = await pool.query(
+            'UPDATE sessions SET last_activity = NOW() WHERE session_id = $1 RETURNING *',
+            [sessionId]
+        );
+
+        if (result.rows.length > 0) {
+            res.json({ valid: true });
+        } else {
+            res.json({ valid: false });
+        }
+    } catch (err) {
+        console.error(err);
+        res.json({ valid: false });
     }
 });
 
@@ -748,7 +1091,7 @@ app.patch('/api/auth/keys/:id/deactivate', async (req, res) => {
 // Активувати ключ
 app.patch('/api/auth/keys/:id/activate', async (req, res) => {
     const { id } = req.params;
-    
+
     try {
         await pool.query(
             'UPDATE access_keys SET is_active = true WHERE id = $1',
@@ -761,10 +1104,21 @@ app.patch('/api/auth/keys/:id/activate', async (req, res) => {
     }
 });
 
+// Очищення старих сесій
+setInterval(async () => {
+    try {
+        await pool.query(
+            `DELETE FROM sessions WHERE last_activity < NOW() - INTERVAL '1 hour'`
+        );
+    } catch (err) {
+        console.error('Error cleaning sessions:', err);
+    }
+}, 3600000);
+
 // Видалити ключ
 app.delete('/api/auth/keys/:id', async (req, res) => {
     const { id } = req.params;
-    
+
     try {
         await pool.query('DELETE FROM access_keys WHERE id = $1', [id]);
         res.json({ success: true });
@@ -778,8 +1132,6 @@ app.delete('/api/auth/keys/:id', async (req, res) => {
 // TELEGRAM AUTHENTICATION
 // ============================================
 
-const TELEGRAM_BOT_TOKEN = '8473604371:AAG4wCHCfGDcVttEJFBvXBidn9ySgkWLqAg';
-
 // Перевірка Telegram авторизаційних даних
 function verifyTelegramAuth(authData) {
     const checkHash = authData.hash;
@@ -792,7 +1144,7 @@ function verifyTelegramAuth(authData) {
     dataCheckArr.sort();
     const dataCheckString = dataCheckArr.join('\n');
     
-    const secretKey = crypto.createHash('sha256').update(TELEGRAM_BOT_TOKEN).digest();
+    const secretKey = crypto.createHash('sha256').update(TELEGRAM_LOGIN_BOT_TOKEN).digest();
     const hash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
     
     return hash === checkHash;
