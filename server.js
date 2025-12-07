@@ -7,8 +7,45 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8401038127:AAFuocGyyMpZnI86cum61-PPyQvGWmfJKgk';
+const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || '-1003334842127';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+async function sendTelegramNotification(message) {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) {
+        console.log('⚠️ Telegram not configured');
+        return;
+    }
+
+    try {
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: TELEGRAM_CHANNEL_ID,
+                text: message,
+                parse_mode: 'HTML'
+            })
+        });
+
+        if (!response.ok) {
+            console.error('Telegram API error:', await response.text());
+        }
+    } catch (err) {
+        console.error('Error sending Telegram notification:', err);
+    }
+}
+
+function getClientIP(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0].trim()
+        || req.headers['x-real-ip']
+        || req.connection.remoteAddress
+        || req.socket.remoteAddress
+        || 'unknown';
+}
 
 // Створюємо папку для зображень якщо не існує
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -165,6 +202,31 @@ async function initDatabase() {
         await client.query(
             "ALTER TABLE admin_logs ADD COLUMN IF NOT EXISTS comment TEXT"
         );
+
+        // Таблиця активних сесій
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS sessions (
+                id SERIAL PRIMARY KEY,
+                cabinet VARCHAR(50) NOT NULL,
+                session_id VARCHAR(255) UNIQUE NOT NULL,
+                ip_address VARCHAR(45),
+                user_agent TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                last_activity TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
+        // Таблиця логування входів
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS login_logs (
+                id SERIAL PRIMARY KEY,
+                cabinet VARCHAR(50) NOT NULL,
+                ip_address VARCHAR(45),
+                user_agent TEXT,
+                status VARCHAR(50),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
 
         console.log('✅ База даних ініціалізована');
     } catch (err) {
@@ -783,31 +845,86 @@ app.use(express.static('public'));
 // ACCESS KEY AUTHENTICATION
 // ============================================
 
-// Авторизація по ключу (перевірка в БД)
+// Авторизація по ключу (перевірка в БД) з унікальними сесіями та відстеженням IP
 app.post('/api/auth/login', async (req, res) => {
     const { key } = req.body;
-    
+    const ipAddress = getClientIP(req);
+    const userAgent = req.headers['user-agent'] || '';
+
     try {
         // Шукаємо ключ в базі даних
         const result = await pool.query(
             'SELECT * FROM access_keys WHERE access_key = $1 AND is_active = true',
             [key]
         );
-        
+
         if (result.rows.length > 0) {
             const keyData = result.rows[0];
-            
+            const cabinet = keyData.cabinet;
+
+            // Завершуємо попередні сесії цього кабінету
+            await pool.query('DELETE FROM sessions WHERE cabinet = $1', [cabinet]);
+
+            // Перевіряємо останній успішний вхід для виявлення зміни IP
+            const lastLogin = await pool.query(
+                `SELECT ip_address FROM login_logs
+                 WHERE cabinet = $1 AND status = 'success'
+                 ORDER BY created_at DESC LIMIT 1`,
+                [cabinet]
+            );
+
+            let ipChanged = false;
+            if (lastLogin.rows.length > 0 && lastLogin.rows[0].ip_address !== ipAddress) {
+                ipChanged = true;
+
+                const message = `
+🔐 <b>НОВА АВТОРИЗАЦІЯ З ІНШОГО IP</b>
+
+👤 Кабінет: <code>${cabinet}</code>
+🌐 Попередній IP: <code>${lastLogin.rows[0].ip_address}</code>
+🌐 Новий IP: <code>${ipAddress}</code>
+🕐 Час: ${new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Kiev' })}
+
+${userAgent ? `📱 Пристрій: ${userAgent.substring(0, 100)}` : ''}
+                `.trim();
+
+                await sendTelegramNotification(message);
+            }
+
+            // Створюємо нову сесію
+            const sessionId = crypto.randomBytes(32).toString('hex');
+            await pool.query(
+                `INSERT INTO sessions (cabinet, session_id, ip_address, user_agent)
+                 VALUES ($1, $2, $3, $4)`,
+                [cabinet, sessionId, ipAddress, userAgent]
+            );
+
+            // Логуємо успішний вхід
+            await pool.query(
+                `INSERT INTO login_logs (cabinet, ip_address, user_agent, status)
+                 VALUES ($1, $2, $3, $4)`,
+                [cabinet, ipAddress, userAgent, 'success']
+            );
+
             // Оновлюємо час останнього використання
             await pool.query(
                 'UPDATE access_keys SET last_used = NOW() WHERE id = $1',
                 [keyData.id]
             );
-            
+
             res.json({
                 success: true,
-                cabinet: keyData.cabinet
+                cabinet: cabinet,
+                sessionId: sessionId,
+                ipChanged: ipChanged
             });
         } else {
+            await pool.query(
+                `INSERT INTO login_logs (cabinet, ip_address, user_agent, status)
+                 VALUES ($1, $2, $3, $4)`,
+                ['unknown', ipAddress, userAgent, 'invalid_key']
+            );
+
             res.json({
                 success: false,
                 error: 'Невірний ключ доступу'
@@ -816,6 +933,40 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Помилка сервера' });
+    }
+});
+
+// Вихід (видалення сесії)
+app.post('/api/auth/logout', async (req, res) => {
+    const { sessionId } = req.body;
+
+    try {
+        await pool.query('DELETE FROM sessions WHERE session_id = $1', [sessionId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Помилка виходу' });
+    }
+});
+
+// Перевірка активності сесії (heartbeat)
+app.post('/api/auth/heartbeat', async (req, res) => {
+    const { sessionId } = req.body;
+
+    try {
+        const result = await pool.query(
+            'UPDATE sessions SET last_activity = NOW() WHERE session_id = $1 RETURNING *',
+            [sessionId]
+        );
+
+        if (result.rows.length > 0) {
+            res.json({ valid: true });
+        } else {
+            res.json({ valid: false });
+        }
+    } catch (err) {
+        console.error(err);
+        res.json({ valid: false });
     }
 });
 
@@ -871,7 +1022,7 @@ app.patch('/api/auth/keys/:id/deactivate', async (req, res) => {
 // Активувати ключ
 app.patch('/api/auth/keys/:id/activate', async (req, res) => {
     const { id } = req.params;
-    
+
     try {
         await pool.query(
             'UPDATE access_keys SET is_active = true WHERE id = $1',
@@ -884,10 +1035,21 @@ app.patch('/api/auth/keys/:id/activate', async (req, res) => {
     }
 });
 
+// Очищення старих сесій
+setInterval(async () => {
+    try {
+        await pool.query(
+            `DELETE FROM sessions WHERE last_activity < NOW() - INTERVAL '1 hour'`
+        );
+    } catch (err) {
+        console.error('Error cleaning sessions:', err);
+    }
+}, 3600000);
+
 // Видалити ключ
 app.delete('/api/auth/keys/:id', async (req, res) => {
     const { id } = req.params;
-    
+
     try {
         await pool.query('DELETE FROM access_keys WHERE id = $1', [id]);
         res.json({ success: true });
