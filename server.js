@@ -9,13 +9,21 @@ require('dotenv').config();
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8401038127:AAFuocGyyMpZnI86cum61-PPyQvGWmfJKgk';
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || '-1003334842127';
+const TELEGRAM_LOGIN_BOT_TOKEN = process.env.TELEGRAM_LOGIN_BOT_TOKEN || TELEGRAM_BOT_TOKEN;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+let telegramNotificationsDisabledReason = null;
+
 async function sendTelegramNotification(message) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) {
         console.log('⚠️ Telegram not configured');
+        return;
+    }
+
+    if (telegramNotificationsDisabledReason) {
+        console.log('⚠️ Telegram notifications disabled:', telegramNotificationsDisabledReason);
         return;
     }
 
@@ -32,7 +40,12 @@ async function sendTelegramNotification(message) {
         });
 
         if (!response.ok) {
-            console.error('Telegram API error:', await response.text());
+            const body = await response.text();
+            console.error('Telegram API error:', body);
+
+            if (response.status === 401 || response.status === 403) {
+                telegramNotificationsDisabledReason = 'Authentication failed. Check TELEGRAM_BOT_TOKEN/TELEGRAM_CHANNEL_ID configuration.';
+            }
         }
     } catch (err) {
         console.error('Error sending Telegram notification:', err);
@@ -1063,8 +1076,6 @@ app.delete('/api/auth/keys/:id', async (req, res) => {
 // TELEGRAM AUTHENTICATION
 // ============================================
 
-const TELEGRAM_BOT_TOKEN = '8473604371:AAG4wCHCfGDcVttEJFBvXBidn9ySgkWLqAg';
-
 // Перевірка Telegram авторизаційних даних
 function verifyTelegramAuth(authData) {
     const checkHash = authData.hash;
@@ -1077,7 +1088,7 @@ function verifyTelegramAuth(authData) {
     dataCheckArr.sort();
     const dataCheckString = dataCheckArr.join('\n');
     
-    const secretKey = crypto.createHash('sha256').update(TELEGRAM_BOT_TOKEN).digest();
+    const secretKey = crypto.createHash('sha256').update(TELEGRAM_LOGIN_BOT_TOKEN).digest();
     const hash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
     
     return hash === checkHash;
