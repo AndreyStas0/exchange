@@ -1,0 +1,2696 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система обміну ордерами (NeonDB)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        /* Екран вибору кабінету */
+        .cabinet-selection {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .cabinet-selection h1 {
+            color: white;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .cabinet-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .cabinet-btn {
+            background: white;
+            border: none;
+            padding: 30px;
+            border-radius: 15px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .cabinet-btn:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        }
+
+        .cabinet-btn.ua {
+            color: #667eea;
+        }
+
+        .cabinet-btn.ars {
+            color: #f093fb;
+        }
+
+        /* Головний інтерфейс */
+        .main-interface {
+            display: none;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h2 {
+            color: #667eea;
+        }
+
+        .logout-btn {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .logout-btn:hover {
+            background: #ff5252;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            transition: background 0.2s ease;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-secondary {
+            background: #e9ecef;
+            color: #495057;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            transition: background 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: #dee2e6;
+        }
+
+        .debt-info {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .debt-info h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .debt-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .debt-item:last-child {
+            border-bottom: none;
+        }
+
+        .debt-positive {
+            color: #51cf66;
+            font-weight: bold;
+        }
+
+        .debt-negative {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+
+        .main-content {
+            display: flex;
+            gap: 20px;
+        }
+
+        .sidebar {
+            flex: 0 0 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .action-btn {
+            background: white;
+            border: none;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            color: #667eea;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .orders-area {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-content: flex-start;
+        }
+
+        .order-column {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            min-width: 350px;
+            max-width: 400px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .order-column h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .order-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .order-card.pending {
+            border-left-color: #ffd43b;
+        }
+
+        .order-card.completed {
+            border-left-color: #51cf66;
+            opacity: 0.7;
+        }
+
+        .order-card.cancelled {
+            border-left-color: #ff6b6b;
+            opacity: 0.7;
+        }
+
+        .order-detail {
+            margin: 8px 0;
+            font-size: 0.95em;
+            word-wrap: break-word;
+        }
+
+        .order-detail strong {
+            color: #495057;
+        }
+
+        .order-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .order-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .order-btn.paid {
+            background: #51cf66;
+            color: white;
+        }
+
+        .order-btn.paid:hover {
+            background: #40c057;
+        }
+
+        .order-btn.receipt {
+            background: #4dabf7;
+            color: white;
+        }
+
+        .order-btn.receipt:hover {
+            background: #339af0;
+        }
+
+        .order-btn.cancel {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .order-btn.cancel:hover {
+            background: #ff5252;
+        }
+
+        .order-btn.close {
+            background: #868e96;
+            color: white;
+            flex: 0 0 40px;
+        }
+
+        .order-btn.close:hover {
+            background: #495057;
+        }
+        
+        /* Push повідомлення */
+        .notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            pointer-events: none;
+        }
+        
+        .notification {
+            background: white;
+            border-left: 4px solid #667eea;
+            padding: 15px 20px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 300px;
+            max-width: 400px;
+            pointer-events: all;
+            animation: slideIn 0.3s ease-out forwards, slideOut 0.3s ease-in 2.7s forwards;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(400px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        @keyframes slideOut {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(400px);
+            }
+        }
+        
+        .notification.order {
+            border-left-color: #667eea;
+        }
+        
+        .notification.withdrawal {
+            border-left-color: #f59e0b;
+        }
+        
+        .notification.request {
+            border-left-color: #10b981;
+        }
+        
+        .notification.success {
+            border-left-color: #27ae60;
+            background: #f0fdf4;
+        }
+        
+        .notification.error {
+            border-left-color: #e74c3c;
+            background: #fef2f2;
+        }
+        
+        .notification-title {
+            font-weight: 600;
+            font-size: 1em;
+            margin-bottom: 5px;
+            color: #2d3748;
+        }
+        
+        .notification-text {
+            font-size: 0.9em;
+            color: #4a5568;
+        }
+        
+        /* Анімація зміни балансу */
+        .balance-change {
+            animation: balanceFlash 0.6s ease-in-out;
+        }
+        
+        @keyframes balanceFlash {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+                color: #667eea;
+                font-weight: bold;
+            }
+        }
+
+        .order-status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .status-completed {
+            background: #d3f9d8;
+            color: #2b8a3e;
+        }
+
+        .status-cancelled {
+            background: #ffe3e3;
+            color: #c92a2a;
+        }
+
+        /* Модальне вікно */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .form-group select,
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .modal-btn.submit {
+            background: #667eea;
+            color: white;
+        }
+
+        .modal-btn.submit:hover {
+            background: #5568d3;
+        }
+
+        .modal-btn.cancel {
+            background: #868e96;
+            color: white;
+        }
+
+        .modal-btn.cancel:hover {
+            background: #495057;
+        }
+
+        .request-card {
+            background: #fff3bf;
+            border-left-color: #ffd43b;
+            cursor: pointer;
+        }
+
+        .request-card:hover {
+            background: #ffe066;
+        }
+
+        .file-upload {
+            border: 2px dashed #dee2e6;
+            padding: 20px;
+            text-align: center;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-upload:hover {
+            border-color: #667eea;
+            background: #f8f9fa;
+        }
+
+        .file-upload input {
+            display: none;
+        }
+
+        .receipt-images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .receipt-thumb {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 2px solid #dee2e6;
+        }
+
+        .receipt-thumb:hover {
+            border-color: #667eea;
+        }
+
+        .connection-status {
+            background: #d3f9d8;
+            color: #2b8a3e;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .connection-status.disconnected {
+            background: #ffe3e3;
+            color: #c92a2a;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                flex: 1;
+            }
+
+            .order-column {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Контейнер для push повідомлень -->
+    <div class="notification-container" id="notificationContainer"></div>
+
+    <!-- Екран вибору кабінету -->
+    <!-- Авторизація по ключу -->
+    <div class="cabinet-selection" id="loginScreen">
+        <h1>Вхід в систему</h1>
+        <p style="color: #868e96; margin-bottom: 30px;">Введіть ваш ключ доступу</p>
+        <div style="max-width: 400px; margin: 0 auto;">
+            <input type="password" id="accessKeyInput" placeholder="Ключ доступу (10 символів)" 
+                   style="width: 100%; padding: 15px; font-size: 16px; border: 2px solid #dee2e6; border-radius: 8px; margin-bottom: 15px;"
+                   maxlength="10">
+            <button onclick="loginWithKey()" 
+                    style="width: 100%; padding: 15px; font-size: 16px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                Увійти
+            </button>
+            <div id="loginError" style="color: #e74c3c; margin-top: 15px; display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Адмін панель -->
+    <div class="main-interface" id="adminInterface" style="display: none;">
+        <div class="header">
+            <div>
+                <h2>🔧 Адміністратор</h2>
+                <div id="adminClock" style="color: #868e96; font-size: 0.9em; margin-top: 5px;"></div>
+            </div>
+            <button onclick="logout()" class="logout-btn">Вийти</button>
+        </div>
+
+        <div style="padding: 20px;">
+            <h3 style="margin-bottom: 20px;">Баланси між кабінетами</h3>
+            
+            <div id="adminBalancesList" style="display: grid; gap: 15px;">
+                <!-- Тут будуть баланси -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальне вікно редагування балансу -->
+    <div id="editBalanceModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <h3>Редагування балансу</h3>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <p id="balanceExplanation" style="margin: 0; line-height: 1.6;"></p>
+            </div>
+
+            <div class="form-group">
+                <label>Новий баланс:</label>
+                <input type="number" id="newBalanceAmount" step="0.01" placeholder="Введіть суму">
+                <small style="color: #868e96; display: block; margin-top: 5px;">
+                    Від'ємне значення = перший кабінет винен<br>
+                    Додатне значення = другий кабінет винен
+                </small>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button onclick="saveBalance()" class="btn-primary" style="flex: 1;">Зберегти</button>
+                <button onclick="closeEditBalanceModal()" class="btn-secondary" style="flex: 1;">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальне вікно історії операцій -->
+    <div id="historyModal" class="modal">
+        <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+            <h3>📋 Історія операцій</h3>
+            
+            <!-- Фільтри -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    
+                    <!-- Тип операції -->
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Тип операції:</label>
+                        <select id="historyType" onchange="filterHistory()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #dee2e6;">
+                            <option value="all">Все</option>
+                            <option value="orders">Тільки ордери</option>
+                            <option value="withdrawals">Тільки виводи</option>
+                        </select>
+                    </div>
+
+                    <!-- Дата від -->
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Дата від:</label>
+                        <input type="datetime-local" id="historyDateFrom" onchange="filterHistory()" 
+                               style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #dee2e6;">
+                    </div>
+
+                    <!-- Дата до -->
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Дата до:</label>
+                        <input type="datetime-local" id="historyDateTo" onchange="filterHistory()" 
+                               style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #dee2e6;">
+                    </div>
+
+                    <!-- Кнопка скинути фільтри -->
+                    <div style="display: flex; align-items: flex-end;">
+                        <button onclick="resetHistoryFilters()" style="width: 100%; padding: 10px; background: #868e96; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                            🔄 Скинути
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Список операцій -->
+            <div id="historyList" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                <!-- Тут будуть операції -->
+            </div>
+
+            <div style="margin-top: 20px; text-align: right;">
+                <button onclick="closeHistoryModal()" class="btn-secondary">Закрити</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Головний інтерфейс -->
+    <div class="main-interface" id="mainInterface">
+        <div class="header">
+            <div>
+                <h2 id="currentCabinet"></h2>
+                <div id="currentDateTime" style="font-size: 0.9em; color: #868e96; margin-top: 5px;"></div>
+            </div>
+            <button class="logout-btn" onclick="logout()">Вийти</button>
+        </div>
+
+        <div class="debt-info" id="debtInfo"></div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <button class="action-btn" onclick="openRequestOrdersModal()">📥 Запросити ордери</button>
+                <button class="action-btn" onclick="openRequestWithdrawalModal()">💸 Запросити вивід</button>
+                <button class="action-btn" onclick="openHistoryModal()" style="background: #48dbfb; color: #2c3e50;">📋 Історія операцій</button>
+            </div>
+
+            <div class="orders-area" id="ordersArea"></div>
+        </div>
+    </div>
+
+    <!-- Модальні вікна (залишились такими ж як у Firebase версії) -->
+    <div class="modal" id="requestOrdersModal">
+        <div class="modal-content">
+            <h3>Запросити ордери</h3>
+            <div class="form-group">
+                <label>Кабінет:</label>
+                <select id="orderCabinet"></select>
+            </div>
+            <div class="form-group">
+                <label>Сума (USDT):</label>
+                <input type="number" id="orderAmount" step="0.01" min="0.01">
+            </div>
+            <div class="form-group" id="orderTypeGroup">
+                <label>Тип ордеру:</label>
+                <select id="orderType">
+                    <option value="card">Переказ по картці</option>
+                    <option value="iban">IBAN</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn submit" onclick="submitOrderRequest()">Відправити</button>
+                <button class="modal-btn cancel" onclick="closeModal('requestOrdersModal')">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="requestWithdrawalModal">
+        <div class="modal-content">
+            <h3>Запросити вивід</h3>
+            <div class="form-group">
+                <label>Кабінет:</label>
+                <select id="withdrawalCabinet"></select>
+            </div>
+            <div class="form-group">
+                <label>Сума (USDT):</label>
+                <input type="number" id="withdrawalAmount" step="0.01" min="0.01">
+            </div>
+            <div class="form-group">
+                <label>Адреса гаманця:</label>
+                <input type="text" id="withdrawalAddress">
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn submit" onclick="submitWithdrawalRequest()">Відправити</button>
+                <button class="modal-btn cancel" onclick="closeModal('requestWithdrawalModal')">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="addOrderDetailsModal">
+        <div class="modal-content">
+            <h3>Додати деталі ордеру</h3>
+            <div id="orderDetailsForm"></div>
+            <div class="modal-actions">
+                <button class="modal-btn submit" onclick="submitOrderDetails()">Додати ордер</button>
+                <button class="modal-btn cancel" onclick="closeModal('addOrderDetailsModal')">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="uploadReceiptModal">
+        <div class="modal-content">
+            <h3>Завантажити квитанцію</h3>
+            <div class="file-upload" onclick="document.getElementById('receiptInput').click()">
+                <input type="file" id="receiptInput" accept="image/*" multiple onchange="handleReceiptUpload()">
+                <p>📷 Натисніть для вибору файлів</p>
+                <p style="font-size: 0.9em; color: #868e96;">Можна обрати кілька зображень</p>
+            </div>
+            <div class="receipt-images" id="receiptPreview"></div>
+            <div class="modal-actions">
+                <button class="modal-btn submit" onclick="submitReceipt()">Підтвердити</button>
+                <button class="modal-btn cancel" onclick="closeModal('uploadReceiptModal')">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="viewReceiptsModal">
+        <div class="modal-content">
+            <h3>Квитанції</h3>
+            <div id="receiptsDisplay"></div>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="closeModal('viewReceiptsModal')">Закрити</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="txidModal">
+        <div class="modal-content">
+            <h3>Введіть TxID</h3>
+            <div class="form-group">
+                <label>TxID (Transaction ID):</label>
+                <input type="text" id="txidInput">
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn submit" onclick="submitTxid()">Підтвердити</button>
+                <button class="modal-btn cancel" onclick="closeModal('txidModal')">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Конфігурація API
+        const API_URL = 'http://65.108.19.238/api';
+        let sessionId = localStorage.getItem('sessionId') || null;
+        let currentCabinet = null;
+        let currentOrderId = null;
+        let currentRequestId = null;
+        let receiptFiles = [];
+        let refreshInterval = null;
+        let clockInterval = null;
+        
+        // Для відстеження змін
+        let previousOrders = [];
+        let previousRequests = [];
+        let previousWithdrawals = [];
+        let previousBalances = {};
+
+        const cabinets = [
+            'Кабінет 1 UA', 'Кабінет 2 UA', 'Кабінет 3 UA', 'Кабінет 4 UA',
+            'Кабінет 1 ARS', 'Кабінет 2 ARS'
+        ];
+
+        // ============================================
+        // АВТОРИЗАЦІЯ ПО КЛЮЧУ
+        // ============================================
+
+        // Авторизація по ключу
+        async function loginWithKey() {
+            const keyInput = document.getElementById('accessKeyInput');
+            const errorDiv = document.getElementById('loginError');
+
+            const key = keyInput.value.trim();
+            
+            if (!key) {
+                errorDiv.textContent = 'Введіть ключ доступу';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: key })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentCabinet = data.cabinet;
+                    sessionId = data.sessionId;
+                    
+                    localStorage.setItem('cabinet', data.cabinet);
+                    localStorage.setItem('sessionId', sessionId);
+                    
+                    // Запускаємо heartbeat
+                    startHeartbeat();
+                    
+                    // Показуємо попередження якщо IP змінився
+                    if (data.ipChanged) {
+                        showNotification(
+                            '⚠️ Увага', 
+                            'Вхід виконано з нового IP адреси. Перевірте Telegram канал.', 
+                            'warning'
+                        );
+                    }
+                    
+                    if (data.cabinet.startsWith('ADMIN')) {
+                        selectAdminPanel();
+                    } else {
+                        selectCabinet(data.cabinet);
+                    }
+                } else {
+                    errorDiv.textContent = data.error || 'Невірний ключ доступу';
+                    errorDiv.style.display = 'block';
+                    keyInput.value = '';
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                errorDiv.textContent = 'Помилка підключення до сервера';
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        // ============================================
+        // АДМІН ПАНЕЛЬ
+        // ============================================
+
+        let currentEditBalanceId = null;
+
+        // Відкрити адмін панель
+        function selectAdminPanel() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('adminInterface').style.display = 'block';
+            
+            // Запуск годинника
+            updateAdminClock();
+            clockInterval = setInterval(updateAdminClock, 1000);
+            
+            // Завантаження балансів
+            loadAdminBalances();
+            
+            // Автооновлення кожні 10 секунд
+            refreshInterval = setInterval(loadAdminBalances, 10000);
+        }
+
+        // Оновлення годинника адміна
+        function updateAdminClock() {
+            const now = new Date();
+            const options = {
+                timeZone: 'Europe/Kiev',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            };
+            document.getElementById('adminClock').textContent = 
+                'Київ (UTC+2): ' + now.toLocaleString('uk-UA', options);
+        }
+
+        // Завантаження всіх балансів
+        async function loadAdminBalances() {
+            try {
+                const response = await fetch(`${API_URL}/admin/balances/all`);
+                const balances = await response.json();
+                
+                displayAdminBalances(balances);
+            } catch (error) {
+                console.error('Error loading balances:', error);
+            }
+        }
+
+        // Відображення балансів
+        function displayAdminBalances(balances) {
+            const container = document.getElementById('adminBalancesList');
+            
+            if (balances.length === 0) {
+                container.innerHTML = '<p style="color: #868e96;">Немає балансів</p>';
+                return;
+            }
+
+            let html = '';
+            
+            balances.forEach(balance => {
+                const amount = parseFloat(balance.amount);
+                let description = '';
+                let amountColor = '#495057';
+                
+                if (amount < 0) {
+                    // Від'ємний баланс - перший винен другому
+                    description = `${balance.cabinet_from} винен ${balance.cabinet_to}`;
+                    amountColor = '#e74c3c';
+                } else if (amount > 0) {
+                    // Додатний баланс - другий винен першому
+                    description = `${balance.cabinet_to} винен ${balance.cabinet_from}`;
+                    amountColor = '#27ae60';
+                } else {
+                    // Нуль - рівні
+                    description = `${balance.cabinet_from} ↔ ${balance.cabinet_to}`;
+                    amountColor = '#95a5a6';
+                }
+
+                html += `
+                    <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; font-size: 1.1em; margin-bottom: 5px;">
+                                ${balance.cabinet_from} ↔ ${balance.cabinet_to}
+                            </div>
+                            <div style="color: #868e96; font-size: 0.9em;">
+                                ${description}
+                            </div>
+                        </div>
+                        <div style="text-align: right; display: flex; align-items: center; gap: 20px;">
+                            <div style="font-size: 1.3em; font-weight: 700; color: ${amountColor};">
+                                ${Math.abs(amount).toFixed(2)} USDT
+                            </div>
+                            <button onclick="openEditBalance(${balance.id}, '${balance.cabinet_from}', '${balance.cabinet_to}', ${amount})" 
+                                    style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                ✏️ Редагувати
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        // Відкрити модальне вікно редагування
+        function openEditBalance(id, cabinetFrom, cabinetTo, currentAmount) {
+            currentEditBalanceId = id;
+            
+            // Формуємо пояснення
+            let explanation = '';
+            if (currentAmount < 0) {
+                explanation = `<strong>Поточний баланс:</strong> ${currentAmount} USDT<br>`;
+                explanation += `<strong>Це означає:</strong> ${cabinetFrom} винен ${cabinetTo} ${Math.abs(currentAmount)} USDT<br><br>`;
+                explanation += `<strong>Як змінити:</strong><br>`;
+                explanation += `• Від'ємне значення → ${cabinetFrom} винен ${cabinetTo}<br>`;
+                explanation += `• Додатне значення → ${cabinetTo} винен ${cabinetFrom}<br>`;
+                explanation += `• 0 → баланс рівний`;
+            } else if (currentAmount > 0) {
+                explanation = `<strong>Поточний баланс:</strong> ${currentAmount} USDT<br>`;
+                explanation += `<strong>Це означає:</strong> ${cabinetTo} винен ${cabinetFrom} ${Math.abs(currentAmount)} USDT<br><br>`;
+                explanation += `<strong>Як змінити:</strong><br>`;
+                explanation += `• Додатне значення → ${cabinetTo} винен ${cabinetFrom}<br>`;
+                explanation += `• Від'ємне значення → ${cabinetFrom} винен ${cabinetTo}<br>`;
+                explanation += `• 0 → баланс рівний`;
+            } else {
+                explanation = `<strong>Поточний баланс:</strong> 0 USDT (рівні)<br><br>`;
+                explanation += `<strong>Як встановити:</strong><br>`;
+                explanation += `• Від'ємне значення → ${cabinetFrom} винен ${cabinetTo}<br>`;
+                explanation += `• Додатне значення → ${cabinetTo} винен ${cabinetFrom}<br>`;
+                explanation += `• 0 → баланс залишиться рівним`;
+            }
+            
+            document.getElementById('balanceExplanation').innerHTML = explanation;
+            document.getElementById('newBalanceAmount').value = currentAmount;
+            document.getElementById('editBalanceModal').style.display = 'flex';
+        }
+
+        // Закрити модальне вікно
+        function closeEditBalanceModal() {
+            document.getElementById('editBalanceModal').style.display = 'none';
+            currentEditBalanceId = null;
+        }
+
+        // Зберегти новий баланс
+        async function saveBalance() {
+            const newAmount = document.getElementById('newBalanceAmount').value;
+            
+            if (newAmount === '' || isNaN(newAmount)) {
+                alert('Введіть коректну суму');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/admin/balances/${currentEditBalanceId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount: parseFloat(newAmount) })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    closeEditBalanceModal();
+                    loadAdminBalances();
+                } else {
+                    alert('Помилка збереження');
+                }
+            } catch (error) {
+                console.error('Error saving balance:', error);
+                alert('Помилка підключення');
+            }
+        }
+
+        // ============================================
+        // ІСТОРІЯ ОПЕРАЦІЙ
+        // ============================================
+
+        let allHistory = [];
+
+        // Відкрити модальне вікно історії
+        async function openHistoryModal() {
+            console.log('Opening history modal for cabinet:', currentCabinet);
+            document.getElementById('historyModal').style.display = 'flex';
+            document.getElementById('historyList').innerHTML = 
+                '<p style="text-align: center; color: #868e96; padding: 40px;">⏳ Завантаження...</p>';
+            resetHistoryFilters();
+            await loadHistory();
+        }
+
+        // Закрити модальне вікно історії
+        function closeHistoryModal() {
+            document.getElementById('historyModal').style.display = 'none';
+        }
+
+        // Завантажити історію
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${API_URL}/history/${currentCabinet}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                allHistory = await response.json();
+                
+                console.log('History loaded:', allHistory.length, 'items');
+                
+                if (allHistory.length === 0) {
+                    document.getElementById('historyList').innerHTML = 
+                        '<p style="text-align: center; color: #868e96; padding: 40px;">📭 Поки що немає завершених операцій.<br><br>Історія буде доступна після оплати ордерів або підтвердження виводів.</p>';
+                } else {
+                    filterHistory();
+                }
+            } catch (error) {
+                console.error('Error loading history:', error);
+                document.getElementById('historyList').innerHTML = 
+                    `<p style="text-align: center; color: #e74c3c; padding: 40px;">
+                        ❌ Помилка завантаження історії<br><br>
+                        <small>${error.message}</small><br><br>
+                        <button onclick="loadHistory()" class="btn-primary">Спробувати ще раз</button>
+                    </p>`;
+            }
+        }
+
+        // Фільтрувати історію
+        function filterHistory() {
+            const type = document.getElementById('historyType').value;
+            const dateFrom = document.getElementById('historyDateFrom').value;
+            const dateTo = document.getElementById('historyDateTo').value;
+
+            let filtered = [...allHistory];
+
+            // Фільтр по типу
+            if (type === 'orders') {
+                filtered = filtered.filter(item => item.operation_type === 'order');
+            } else if (type === 'withdrawals') {
+                filtered = filtered.filter(item => item.operation_type === 'withdrawal');
+            }
+
+            // Фільтр по даті від
+            if (dateFrom) {
+                const fromDate = new Date(dateFrom);
+                filtered = filtered.filter(item => new Date(item.created_at) >= fromDate);
+            }
+
+            // Фільтр по даті до
+            if (dateTo) {
+                const toDate = new Date(dateTo);
+                filtered = filtered.filter(item => new Date(item.created_at) <= toDate);
+            }
+
+            displayHistory(filtered);
+        }
+
+        // Відобразити історію
+        function displayHistory(history) {
+            const container = document.getElementById('historyList');
+
+            if (history.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #868e96; padding: 40px;">Немає операцій за обраними фільтрами</p>';
+                return;
+            }
+
+            let html = '<div style="display: grid; gap: 15px;">';
+
+            history.forEach(item => {
+                const date = new Date(item.created_at);
+                const dateStr = date.toLocaleDateString('uk-UA', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                });
+                const timeStr = date.toLocaleTimeString('uk-UA', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                if (item.operation_type === 'order') {
+                    // Ордер
+                    const isIncoming = item.to_cabinet === currentCabinet;
+                    const otherCabinet = isIncoming ? item.from_cabinet : item.to_cabinet;
+                    const direction = isIncoming ? '📥 Вхідний' : '📤 Вихідний';
+                    const directionColor = isIncoming ? '#27ae60' : '#3498db';
+                    
+                    // Квитанції
+                    let receiptsHtml = '';
+                    if (item.receipt_files) {
+                        try {
+                            console.log('Receipt files raw:', item.receipt_files);
+                            console.log('Receipt files type:', typeof item.receipt_files);
+                            
+                            let receipts = [];
+                            
+                            // Перевіряємо чи це JSON масив чи один base64 рядок
+                            if (typeof item.receipt_files === 'string') {
+                                if (item.receipt_files.startsWith('[')) {
+                                    // Це JSON масив
+                                    receipts = JSON.parse(item.receipt_files);
+                                } else if (item.receipt_files.startsWith('data:image')) {
+                                    // Це один base64 рядок
+                                    receipts = [item.receipt_files];
+                                } else if (item.receipt_files.startsWith('/uploads')) {
+                                    // Це один URL
+                                    receipts = [item.receipt_files];
+                                }
+                            } else if (Array.isArray(item.receipt_files)) {
+                                receipts = item.receipt_files;
+                            }
+                            
+                            console.log('Parsed receipts:', receipts);
+                            
+                            if (receipts.length > 0) {
+                                receiptsHtml = `
+                                    <div style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 6px;">
+                                        <div style="font-weight: 600; margin-bottom: 8px; color: #27ae60;">📎 Квитанції (${receipts.length}):</div>
+                                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                            ${receipts.map((receipt, idx) => `
+                                                <a href="${receipt}" target="_blank" 
+                                                   style="display: inline-block; padding: 6px 12px; background: white; 
+                                                          border: 1px solid #27ae60; border-radius: 6px; 
+                                                          color: #27ae60; text-decoration: none; font-size: 0.85em;
+                                                          transition: all 0.2s;">
+                                                    🖼️ Квитанція ${idx + 1}
+                                                </a>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing receipts:', e, 'Data:', item.receipt_files);
+                        }
+                    }
+
+                    html += `
+                        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid ${directionColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                                <div>
+                                    <div style="font-weight: 700; font-size: 1.1em; color: ${directionColor};">
+                                        ${direction} ордер #${item.id}
+                                    </div>
+                                    <div style="color: #868e96; font-size: 0.9em; margin-top: 5px;">
+                                        Створено: ${dateStr} о ${timeStr}
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 1.4em; font-weight: 700; color: #2c3e50;">
+                                        ${item.amount} USDT
+                                    </div>
+                                    <div style="color: #868e96; font-size: 0.85em; margin-top: 5px;">
+                                        ${item.order_type === 'card' ? '💳 Картка' : '🏦 IBAN'}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-top: 10px;">
+                                <div style="color: #495057; font-size: 0.95em; margin-bottom: 8px;">
+                                    <strong>${isIncoming ? 'Від:' : 'До:'}</strong> ${otherCabinet}
+                                </div>
+                                
+                                ${item.amount_local ? `
+                                    <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
+                                        💵 Сума: <strong>${item.amount_local} ${item.order_type === 'card' || item.order_type === 'iban' ? 'UAH' : 'ARS'}</strong>
+                                    </div>
+                                ` : ''}
+                                
+                                ${item.card_number ? `
+                                    <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
+                                        💳 Картка: <code>${item.card_number}</code>
+                                    </div>
+                                ` : ''}
+                                
+                                ${item.iban ? `
+                                    <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
+                                        🏦 IBAN: <code>${item.iban}</code>
+                                    </div>
+                                ` : ''}
+                                
+                                ${item.tax_number ? `
+                                    <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
+                                        🆔 Tax Number: <code>${item.tax_number}</code>
+                                    </div>
+                                ` : ''}
+                                
+                                ${item.cvu ? `
+                                    <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
+                                        🔢 CVU: <code>${item.cvu}</code>
+                                    </div>
+                                ` : ''}
+                                
+                                ${item.fio ? `
+                                    <div style="color: #495057; font-size: 0.9em; margin-bottom: 5px;">
+                                        👤 ПІБ: <strong>${item.fio}</strong>
+                                    </div>
+                                ` : ''}
+                                
+                                ${item.comment ? `
+                                    <div style="color: #495057; font-size: 0.9em; margin-top: 8px; padding-top: 8px; border-top: 1px solid #dee2e6;">
+                                        💬 Коментар: <em>${item.comment}</em>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
+                            ${receiptsHtml}
+                        </div>
+                    `;
+                } else {
+                    // Вивід
+                    const isRequested = item.from_cabinet === currentCabinet;
+                    const otherCabinet = isRequested ? item.to_cabinet : item.from_cabinet;
+                    const direction = isRequested ? '💸 Запрошений вивід' : '✅ Підтверджений вивід';
+                    const directionColor = isRequested ? '#e67e22' : '#27ae60';
+
+                    html += `
+                        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid ${directionColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                                <div>
+                                    <div style="font-weight: 700; font-size: 1.1em; color: ${directionColor};">
+                                        ${direction}
+                                    </div>
+                                    <div style="color: #868e96; font-size: 0.9em; margin-top: 5px;">
+                                        ${dateStr} о ${timeStr}
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 1.4em; font-weight: 700; color: #2c3e50;">
+                                        ${item.amount} USDT
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin-top: 10px;">
+                                <div style="color: #495057; font-size: 0.95em; margin-bottom: 5px;">
+                                    ${isRequested ? `Через: <strong>${otherCabinet}</strong>` : `Від: <strong>${otherCabinet}</strong>`}
+                                </div>
+                                ${item.txid ? `<div style="color: #495057; font-size: 0.85em; word-break: break-all;">TxID: <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 0.9em;">${item.txid}</code></div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // Скинути фільтри
+        function resetHistoryFilters() {
+            document.getElementById('historyType').value = 'all';
+            document.getElementById('historyDateFrom').value = '';
+            document.getElementById('historyDateTo').value = '';
+            filterHistory();
+        }
+
+        // Перевірка при завантаженні сторінки
+        window.addEventListener('load', async () => {
+            const savedKey = localStorage.getItem('accessKey');
+            const savedCabinet = localStorage.getItem('cabinet');
+
+            if (savedKey && savedCabinet) {
+                try {
+                    // Перевіряємо чи ключ все ще валідний
+                    const response = await fetch(`${API_URL}/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: savedKey })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success && data.cabinet === savedCabinet) {
+                        // Автоматичний вхід
+                        if (savedCabinet === 'ADMIN') {
+                            selectAdminPanel();
+                        } else {
+                            selectCabinet(savedCabinet);
+                        }
+                    } else {
+                        // Ключ більше не валідний - очищаємо
+                        localStorage.removeItem('accessKey');
+                        localStorage.removeItem('cabinet');
+                    }
+                } catch (error) {
+                    console.error('Auto-login error:', error);
+                }
+            }
+        });
+
+        // Enter для входу
+        document.addEventListener('DOMContentLoaded', () => {
+            const keyInput = document.getElementById('accessKeyInput');
+            if (keyInput) {
+                keyInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        loginWithKey();
+                    }
+                });
+            }
+        });
+
+        // Функція для отримання дати/часу в UTC+2
+        function getUTC2DateTime() {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const utc2 = new Date(utc + (3600000 * 2));
+            return utc2;
+        }
+
+        // Функція для форматування дати/часу
+        function formatDateTime(date) {
+            const d = new Date(date);
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            const seconds = String(d.getSeconds()).padStart(2, '0');
+            return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
+        }
+
+        // Функція для форматування короткої дати/часу (для карток)
+        function formatShortDateTime(dateString) {
+            if (!dateString) return '';
+            const utc = new Date(dateString);
+            const utc2 = new Date(utc.getTime() + (3600000 * 2));
+            const day = String(utc2.getDate()).padStart(2, '0');
+            const month = String(utc2.getMonth() + 1).padStart(2, '0');
+            const hours = String(utc2.getHours()).padStart(2, '0');
+            const minutes = String(utc2.getMinutes()).padStart(2, '0');
+            return `${day}.${month} ${hours}:${minutes}`;
+        }
+
+        // Оновлення годинника
+        function updateClock() {
+            const utc2Time = getUTC2DateTime();
+            document.getElementById('currentDateTime').textContent = 
+                formatDateTime(utc2Time) + ' (UTC+2)';
+        }
+
+        // Показ push повідомлення
+        function showNotification(title, text, type = 'order') {
+            const container = document.getElementById('notificationContainer');
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <div class="notification-title">${title}</div>
+                <div class="notification-text">${text}</div>
+            `;
+            container.appendChild(notification);
+            
+            // Автоматичне видалення через 3 секунди
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // ============================================
+        // ФУНКЦІЯ КОПІЮВАННЯ
+        // ============================================
+
+        function copyToClipboard(text, buttonElement) {
+            // Перевіряємо чи доступний navigator.clipboard (працює тільки на HTTPS або localhost)
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                // Сучасний API для HTTPS
+                navigator.clipboard.writeText(text).then(() => {
+                    showNotification('✅ Скопійовано', text, 'success');
+                    
+                    const originalBg = buttonElement.style.background;
+                    buttonElement.style.background = '#27ae60';
+                    
+                    setTimeout(() => {
+                        buttonElement.style.background = originalBg;
+                    }, 1000);
+                }).catch(err => {
+                    console.error('Error copying:', err);
+                    showNotification('❌ Помилка', 'Не вдалося скопіювати', 'error');
+                });
+            } else {
+                // Fallback для HTTP (старий метод)
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                
+                try {
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    
+                    if (successful) {
+                        showNotification('✅ Скопійовано', text, 'success');
+                        
+                        const originalBg = buttonElement.style.background;
+                        buttonElement.style.background = '#27ae60';
+                        
+                        setTimeout(() => {
+                            buttonElement.style.background = originalBg;
+                        }, 1000);
+                    } else {
+                        showNotification('❌ Помилка', 'Не вдалося скопіювати', 'error');
+                    }
+                } catch (err) {
+                    document.body.removeChild(textarea);
+                    console.error('Fallback copy error:', err);
+                    showNotification('❌ Помилка', 'Не вдалося скопіювати', 'error');
+                }
+            }
+        }
+
+        // Перевірка нових ордерів
+        function checkNewOrders(orders) {
+            const currentIds = orders.map(o => o.id);
+            const previousIds = previousOrders.map(o => o.id);
+            
+            // Нові ордери (тільки вхідні)
+            const newOrders = orders.filter(o => 
+                !previousIds.includes(o.id) && o.to_cabinet === currentCabinet
+            );
+            
+            console.log('Checking orders:', { currentIds, previousIds, newOrders });
+            
+            newOrders.forEach(order => {
+                console.log('New order for us!', order);
+                showNotification(
+                    '📥 Новий ордер',
+                    `Від ${order.from_cabinet}: ${order.amount_usdt} USDT`,
+                    'order'
+                );
+            });
+            
+            // Оплачені ордери (які ми відправили)
+            const paidOrders = orders.filter(o => {
+                const prev = previousOrders.find(p => p.id === o.id);
+                return prev && prev.status === 'pending' && o.status === 'completed' 
+                       && o.from_cabinet === currentCabinet;
+            });
+            
+            paidOrders.forEach(order => {
+                console.log('Our order was paid!', order);
+                showNotification(
+                    '✅ Ордер оплачено',
+                    `${order.to_cabinet} оплатив ${order.amount_usdt} USDT`,
+                    'order'
+                );
+            });
+            
+            // Відмінені ордери (які ми відправили)
+            const cancelledOrders = orders.filter(o => {
+                const prev = previousOrders.find(p => p.id === o.id);
+                return prev && prev.status === 'pending' && o.status === 'cancelled' 
+                       && o.from_cabinet === currentCabinet;
+            });
+            
+            cancelledOrders.forEach(order => {
+                console.log('Our order was cancelled!', order);
+                showNotification(
+                    '⚠️ Ордер відмінено',
+                    `${order.to_cabinet} відмінив ордер ${order.amount_usdt} USDT`,
+                    'withdrawal'
+                );
+            });
+            
+            // Зберігаємо копію масиву
+            previousOrders = [...orders];
+        }
+
+        // Перевірка нових запитів
+        function checkNewRequests(requests) {
+            const currentIds = requests.map(r => r.id);
+            const previousIds = previousRequests.map(r => r.id);
+            
+            // Нові запити (тільки вхідні)
+            const newRequests = requests.filter(r => 
+                !previousIds.includes(r.id) && r.to_cabinet === currentCabinet
+            );
+            
+            console.log('Checking requests:', { currentIds, previousIds, newRequests });
+            
+            newRequests.forEach(request => {
+                console.log('New request for us!', request);
+                showNotification(
+                    '📋 Новий запит на ордери',
+                    `Від ${request.from_cabinet}: ${request.amount} USDT`,
+                    'request'
+                );
+            });
+            
+            // Зберігаємо копію масиву
+            previousRequests = [...requests];
+        }
+
+        // Перевірка нових виводів
+        function checkNewWithdrawals(withdrawals) {
+            const currentIds = withdrawals.map(w => w.id);
+            const previousIds = previousWithdrawals.map(w => w.id);
+            
+            // Нові запити на вивід (тільки вхідні)
+            const newWithdrawals = withdrawals.filter(w => 
+                !previousIds.includes(w.id) && w.to_cabinet === currentCabinet
+            );
+            
+            console.log('Checking withdrawals:', { currentIds, previousIds, newWithdrawals });
+            
+            newWithdrawals.forEach(withdrawal => {
+                console.log('New withdrawal for us!', withdrawal);
+                showNotification(
+                    '💸 Новий запит на вивід',
+                    `Від ${withdrawal.from_cabinet}: ${withdrawal.amount} USDT`,
+                    'withdrawal'
+                );
+            });
+            
+            // Підтверджені виводи (які ми запросили)
+            const completedWithdrawals = withdrawals.filter(w => {
+                const prev = previousWithdrawals.find(p => p.id === w.id);
+                return prev && prev.status === 'pending' && w.status === 'completed' 
+                       && w.from_cabinet === currentCabinet;
+            });
+            
+            completedWithdrawals.forEach(withdrawal => {
+                console.log('Our withdrawal was completed!', withdrawal);
+                const shortTxid = withdrawal.txid.length > 10 
+                    ? withdrawal.txid.substring(0, 10) + '...' 
+                    : withdrawal.txid;
+                showNotification(
+                    '✅ Вивід підтверджено',
+                    `${withdrawal.amount} USDT. TxID: ${shortTxid}`,
+                    'order'
+                );
+            });
+            
+            // Зберігаємо копію масиву
+            previousWithdrawals = [...withdrawals];
+        }
+
+        // Перевірка зміни балансів
+        function checkBalanceChanges(balances) {
+            console.log('Checking balances:', { old: previousBalances, new: balances });
+            
+            Object.keys(balances).forEach(cabinet => {
+                const oldBalance = previousBalances[cabinet] || 0;
+                const newBalance = balances[cabinet] || 0;
+                
+                if (oldBalance !== newBalance) {
+                    console.log('Balance changed for', cabinet, 'from', oldBalance, 'to', newBalance);
+                    
+                    // Додаємо анімацію до елементу балансу
+                    const debtItems = document.querySelectorAll('.debt-item');
+                    debtItems.forEach(item => {
+                        if (item.textContent.includes(cabinet)) {
+                            const balanceSpan = item.querySelector('span:last-child');
+                            if (balanceSpan) {
+                                console.log('Adding animation to', cabinet);
+                                balanceSpan.classList.add('balance-change');
+                                setTimeout(() => {
+                                    balanceSpan.classList.remove('balance-change');
+                                }, 600);
+                            }
+                        }
+                    });
+                }
+            });
+            
+            previousBalances = { ...balances };
+        }
+
+        // Вибір кабінету
+        function selectCabinet(cabinet) {
+            currentCabinet = cabinet;
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('mainInterface').style.display = 'block';
+            document.getElementById('currentCabinet').textContent = cabinet;
+            
+            populateCabinetSelects();
+            updateInterface();
+            
+            // Запуск годинника
+            updateClock();
+            clockInterval = setInterval(updateClock, 1000);
+            
+            // Автоматичне оновлення кожні 3 секунди
+            refreshInterval = setInterval(updateInterface, 3000);
+        }
+
+        // Вихід
+        // Heartbeat для підтримки сесії
+        let heartbeatInterval = null;
+        
+        function startHeartbeat() {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+            }
+            
+            heartbeatInterval = setInterval(async () => {
+                if (!sessionId) return;
+                
+                try {
+                    const response = await fetch(`${API_URL}/auth/heartbeat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId: sessionId })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!data.valid) {
+                        // Сесія невалідна - виходимо
+                        showNotification(
+                            '🚫 Сесія закінчена',
+                            'Ваша сесія була завершена. Будь ласка, увійдіть знову.',
+                            'error'
+                        );
+                        setTimeout(() => logout(), 2000);
+                    }
+                } catch (error) {
+                    console.error('Heartbeat error:', error);
+                }
+            }, 30000); // Кожні 30 секунд
+        }
+        
+        function logout() {
+            if (sessionId) {
+                fetch(`${API_URL}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: sessionId })
+                }).catch(err => console.error('Logout error:', err));
+            }
+            
+            localStorage.removeItem('cabinet');
+            localStorage.removeItem('sessionId');
+            sessionId = null;
+            currentCabinet = null;
+            
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+            }
+            
+            window.location.reload();
+        }
+
+        // Заповнення випадаючих списків
+        function populateCabinetSelects() {
+            const selects = ['orderCabinet', 'withdrawalCabinet'];
+            selects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                select.innerHTML = '';
+                cabinets.forEach(cab => {
+                    if (cab !== currentCabinet) {
+                        const option = document.createElement('option');
+                        option.value = cab;
+                        option.textContent = cab;
+                        select.appendChild(option);
+                    }
+                });
+            });
+
+            updateOrderTypeOptions();
+        }
+
+        function updateOrderTypeOptions() {
+            const orderCabinet = document.getElementById('orderCabinet').value;
+
+            // Якщо поточний кабінет ARS і запитує у UA - тільки CVU
+            if (currentCabinet.includes('ARS') && orderCabinet.includes('UA')) {
+                const orderType = document.getElementById('orderType');
+                orderType.innerHTML = '<option value="cvu">CVU</option>';
+            }
+            // Якщо запитуємо у ARS кабінету - тільки CVU
+            else if (orderCabinet.includes('ARS')) {
+                const orderType = document.getElementById('orderType');
+                orderType.innerHTML = '<option value="cvu">CVU</option>';
+            }
+            // В інших випадках - картка або IBAN
+            else {
+                const orderType = document.getElementById('orderType');
+                orderType.innerHTML = `
+                    <option value="card">Переказ по картці</option>
+                    <option value="iban">IBAN</option>
+                `;
+            }
+        }
+
+        document.getElementById('orderCabinet')?.addEventListener('change', updateOrderTypeOptions);
+
+        function openRequestOrdersModal() {
+            document.getElementById('requestOrdersModal').style.display = 'flex';
+        }
+
+        function openRequestWithdrawalModal() {
+            document.getElementById('requestWithdrawalModal').style.display = 'flex';
+        }
+
+
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+            if (modalId === 'uploadReceiptModal') {
+                receiptFiles = [];
+                document.getElementById('receiptPreview').innerHTML = '';
+            }
+        }
+
+        // Запит на ордери
+        async function submitOrderRequest() {
+            const cabinet = document.getElementById('orderCabinet').value;
+            const amount = parseFloat(document.getElementById('orderAmount').value);
+            const type = document.getElementById('orderType').value;
+
+            if (!amount || amount <= 0) {
+                alert('Введіть коректну суму');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/order-requests`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        from_cabinet: currentCabinet,
+                        to_cabinet: cabinet,
+                        amount: amount,
+                        type: type
+                    })
+                });
+
+                if (response.ok) {
+                    closeModal('requestOrdersModal');
+                    document.getElementById('orderAmount').value = '';
+                    updateInterface();
+                } else {
+                    alert('Помилка створення запиту');
+                }
+            } catch (error) {
+                console.error(error);
+                
+            }
+        }
+
+        // Відміна запиту на ордери
+        async function cancelOrderRequest(requestId) {
+            if (!confirm('Ви впевнені, що хочете відмінити цей запит?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/order-requests/${requestId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    updateInterface();
+                } else {
+                    alert('Помилка відміни запиту');
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // Запит на вивід
+        async function submitWithdrawalRequest() {
+            const cabinet = document.getElementById('withdrawalCabinet').value;
+            const amount = parseFloat(document.getElementById('withdrawalAmount').value);
+            const address = document.getElementById('withdrawalAddress').value;
+
+            if (!amount || amount <= 0) {
+                alert('Введіть коректну суму');
+                return;
+            }
+
+            if (!address) {
+                alert('Введіть адресу гаманця');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/withdrawals`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        from_cabinet: currentCabinet,
+                        to_cabinet: cabinet,
+                        amount: amount,
+                        address: address
+                    })
+                });
+
+                if (response.ok) {
+                    closeModal('requestWithdrawalModal');
+                    document.getElementById('withdrawalAmount').value = '';
+                    document.getElementById('withdrawalAddress').value = '';
+                    updateInterface();
+                } else {
+                    const data = await response.json();
+                    alert(data.error || 'Помилка створення запиту');
+                }
+            } catch (error) {
+                console.error(error);
+                
+            }
+        }
+
+        // Додавання деталей ордеру
+        function openAddOrderDetails(requestId) {
+            currentRequestId = requestId;
+            
+            fetch(`${API_URL}/order-requests`)
+                .then(res => res.json())
+                .then(requests => {
+                    const request = requests.find(r => r.id == requestId);
+                    if (!request) return;
+
+                    let formHtml = '';
+
+                    if (request.type === 'card') {
+                        formHtml = `
+                            <div class="form-group">
+                                <label>Номер картки:</label>
+                                <input type="text" id="cardNumber">
+                            </div>
+                            <div class="form-group">
+                                <label>Сума (UAH):</label>
+                                <input type="number" id="amountLocal" step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label>Сума (USDT):</label>
+                                <input type="number" id="amountUSDT" step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label>Примітка:</label>
+                                <textarea id="note" rows="3"></textarea>
+                            </div>
+                        `;
+                    } else if (request.type === 'iban') {
+                        formHtml = `
+                            <div class="form-group">
+                                <label>IBAN:</label>
+                                <input type="text" id="iban">
+                            </div>
+                            <div class="form-group">
+                                <label>Податковий номер:</label>
+                                <input type="text" id="taxNumber">
+                            </div>
+                            <div class="form-group">
+                                <label>ПІБ:</label>
+                                <input type="text" id="fullName">
+                            </div>
+                            <div class="form-group">
+                                <label>Сума (UAH):</label>
+                                <input type="number" id="amountLocal" step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label>Сума (USDT):</label>
+                                <input type="number" id="amountUSDT" step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label>Примітка:</label>
+                                <textarea id="note" rows="3"></textarea>
+                            </div>
+                        `;
+                    } else if (request.type === 'cvu') {
+                        formHtml = `
+                            <div class="form-group">
+                                <label>CVU:</label>
+                                <input type="text" id="cvu">
+                            </div>
+                            <div class="form-group">
+                                <label>ПІБ:</label>
+                                <input type="text" id="fullName">
+                            </div>
+                            <div class="form-group">
+                                <label>Сума (ARS):</label>
+                                <input type="number" id="amountLocal" step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label>Сума (USDT):</label>
+                                <input type="number" id="amountUSDT" step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label>Примітка:</label>
+                                <textarea id="note" rows="3"></textarea>
+                            </div>
+                        `;
+                    }
+
+                    document.getElementById('orderDetailsForm').innerHTML = formHtml;
+                    document.getElementById('addOrderDetailsModal').style.display = 'flex';
+                });
+        }
+
+        async function submitOrderDetails() {
+            const amountUSDT = parseFloat(document.getElementById('amountUSDT').value);
+
+            if (!amountUSDT || amountUSDT <= 0) {
+                alert('Введіть коректну суму в USDT');
+                return;
+            }
+
+            const orderData = {
+                request_id: currentRequestId,
+                amount_usdt: amountUSDT
+            };
+
+            // Додаємо специфічні поля в залежності від типу
+            const cardNumber = document.getElementById('cardNumber');
+            const iban = document.getElementById('iban');
+            const cvu = document.getElementById('cvu');
+
+            if (cardNumber) {
+                orderData.from_cabinet = currentCabinet;
+                orderData.card_number = cardNumber.value;
+                orderData.amount_local = parseFloat(document.getElementById('amountLocal').value);
+                orderData.note = document.getElementById('note').value;
+                orderData.type = 'card';
+            } else if (iban) {
+                orderData.from_cabinet = currentCabinet;
+                orderData.iban = iban.value;
+                orderData.tax_number = document.getElementById('taxNumber').value;
+                orderData.full_name = document.getElementById('fullName').value;
+                orderData.amount_local = parseFloat(document.getElementById('amountLocal').value);
+                orderData.note = document.getElementById('note').value;
+                orderData.type = 'iban';
+            } else if (cvu) {
+                orderData.from_cabinet = currentCabinet;
+                orderData.cvu = cvu.value;
+                orderData.full_name = document.getElementById('fullName').value;
+                orderData.amount_local = parseFloat(document.getElementById('amountLocal').value);
+                orderData.note = document.getElementById('note').value;
+                orderData.type = 'cvu';
+            }
+
+            // Отримуємо інфо про запит для визначення to_cabinet
+            try {
+                const requestsResponse = await fetch(`${API_URL}/order-requests`);
+                const requests = await requestsResponse.json();
+                const request = requests.find(r => r.id == currentRequestId);
+                
+                orderData.to_cabinet = request.from_cabinet;
+
+                const response = await fetch(`${API_URL}/orders`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderData)
+                });
+
+                if (response.ok) {
+                    closeModal('addOrderDetailsModal');
+                    updateInterface();
+                } else {
+                    alert('Помилка додавання ордеру');
+                }
+            } catch (error) {
+                console.error(error);
+                
+            }
+        }
+
+        // Оплата ордеру
+        let isProcessing = false; // Флаг для запобігання множинних кліків
+
+        async function markAsPaid(orderId) {
+            if (isProcessing) {
+                return; // Якщо вже обробляється - ігноруємо
+            }
+
+            isProcessing = true;
+
+            try {
+                const response = await fetch(`${API_URL}/orders/${orderId}/pay`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+
+                if (response.ok) {
+                    updateInterface();
+                } else {
+                    alert('Помилка оплати');
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Помилка підключення');
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        // Завантаження квитанцій
+        function openReceiptUpload(orderId) {
+            currentOrderId = orderId;
+            document.getElementById('uploadReceiptModal').style.display = 'flex';
+        }
+
+        function handleReceiptUpload() {
+            const files = document.getElementById('receiptInput').files;
+            receiptFiles = [];
+            const preview = document.getElementById('receiptPreview');
+            preview.innerHTML = '';
+
+            for (let file of files) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    receiptFiles.push(e.target.result);
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.className = 'receipt-thumb';
+                    preview.appendChild(img);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        async function submitReceipt() {
+            if (receiptFiles.length === 0) {
+                alert('Оберіть файли квитанції');
+                return;
+            }
+
+            if (isProcessing) {
+                return; // Якщо вже обробляється
+            }
+
+            isProcessing = true;
+
+            // Показуємо індикатор завантаження
+            const submitBtn = event.target;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '⏳ Завантаження...';
+            submitBtn.disabled = true;
+
+            try {
+                // Спочатку конвертуємо base64 в файли на сервері
+                const convertResponse = await fetch(`${API_URL}/convert-receipts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ receipts: receiptFiles })
+                });
+
+                const convertData = await convertResponse.json();
+                
+                if (!convertData.success) {
+                    throw new Error('Помилка конвертації зображень');
+                }
+
+                // Тепер зберігаємо URL файлів замість base64
+                const response = await fetch(`${API_URL}/orders/${currentOrderId}/pay`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ receipts: convertData.fileUrls })
+                });
+
+                if (response.ok) {
+                    closeModal('uploadReceiptModal');
+                    updateInterface();
+                } else {
+                    alert('Помилка завантаження квитанції');
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Помилка відправки квитанції');
+            } finally {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                isProcessing = false;
+            }
+        }
+
+        // Перегляд квитанцій
+        async function viewReceipts(orderId) {
+            try {
+                const response = await fetch(`${API_URL}/orders/${currentCabinet}`);
+                const orders = await response.json();
+                const order = orders.find(o => o.id == orderId);
+
+                if (!order) {
+                    alert('Ордер не знайдено');
+                    return;
+                }
+
+                const display = document.getElementById('receiptsDisplay');
+                display.innerHTML = '';
+
+                if (order.receipts) {
+                    let receipts = order.receipts;
+                    // Якщо receipts це строка, парсимо JSON
+                    if (typeof receipts === 'string') {
+                        try {
+                            receipts = JSON.parse(receipts);
+                        } catch (e) {
+                            console.error('Помилка парсингу квитанцій:', e);
+                            display.innerHTML = '<p>Помилка завантаження квитанцій</p>';
+                            return;
+                        }
+                    }
+                    
+                    if (Array.isArray(receipts) && receipts.length > 0) {
+                        receipts.forEach(receipt => {
+                            const img = document.createElement('img');
+                            img.src = receipt;
+                            img.style.maxWidth = '100%';
+                            img.style.marginBottom = '10px';
+                            img.style.borderRadius = '5px';
+                            display.appendChild(img);
+                        });
+                    } else {
+                        display.innerHTML = '<p>Немає квитанцій</p>';
+                    }
+                } else {
+                    display.innerHTML = '<p>Немає квитанцій</p>';
+                }
+
+                document.getElementById('viewReceiptsModal').style.display = 'flex';
+            } catch (error) {
+                console.error('Помилка перегляду квитанцій:', error);
+                alert('Помилка завантаження квитанцій');
+            }
+        }
+
+        // Скасування ордеру
+        async function cancelOrder(orderId) {
+            if (!confirm('Ви впевнені, що хочете скасувати цей ордер?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/orders/${orderId}/cancel`, {
+                    method: 'PATCH'
+                });
+
+                if (response.ok) {
+                    updateInterface();
+                } else {
+                    alert('Помилка скасування');
+                }
+            } catch (error) {
+                console.error(error);
+                
+            }
+        }
+
+        // Приховати ордер (локально)
+        async function closeOrder(orderId) {
+            try {
+                const response = await fetch(`${API_URL}/orders/${orderId}/hide`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cabinet: currentCabinet })
+                });
+
+                if (response.ok) {
+                    updateInterface();
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // TxID
+        function openTxidInput(withdrawalId) {
+            currentOrderId = withdrawalId;
+            document.getElementById('txidModal').style.display = 'flex';
+        }
+
+        async function submitTxid() {
+            const txid = document.getElementById('txidInput').value;
+
+            if (!txid) {
+                alert('Введіть TxID');
+                return;
+            }
+
+            if (isProcessing) {
+                return; // Якщо вже обробляється
+            }
+
+            isProcessing = true;
+
+            // Показуємо індикатор завантаження
+            const submitBtn = event.target;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '⏳ Підтвердження...';
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_URL}/withdrawals/${currentOrderId}/confirm`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ txid: txid })
+                });
+
+                if (response.ok) {
+                    closeModal('txidModal');
+                    document.getElementById('txidInput').value = '';
+                    updateInterface();
+                } else {
+                    alert('Помилка підтвердження');
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Помилка підключення');
+            } finally {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                isProcessing = false;
+            }
+        }
+
+        // Приховати вивід (локально)
+        async function closeWithdrawal(withdrawalId) {
+            try {
+                const response = await fetch(`${API_URL}/withdrawals/${withdrawalId}/hide`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cabinet: currentCabinet })
+                });
+
+                if (response.ok) {
+                    updateInterface();
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // Відміна запиту на вивід
+        async function cancelWithdrawal(withdrawalId) {
+            if (!confirm('Ви впевнені, що хочете відмінити цей запит на вивід?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/withdrawals/${withdrawalId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    updateInterface();
+                } else {
+                    alert('Помилка відміни виводу');
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // Оновлення інтерфейсу
+        async function updateInterface() {
+            try {
+                await updateDebtInfo();
+                await updateOrdersArea();
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        async function updateDebtInfo() {
+            const response = await fetch(`${API_URL}/balances/${currentCabinet}`);
+            const balances = await response.json();
+            
+            // Перевіряємо зміни балансу тільки якщо це не перше завантаження
+            const isFirstLoad = Object.keys(previousBalances).length === 0;
+            
+            if (!isFirstLoad) {
+                checkBalanceChanges(balances);
+            } else {
+                console.log('First load - saving initial balances');
+                previousBalances = { ...balances };
+            }
+            
+            const debtInfo = document.getElementById('debtInfo');
+            
+            let html = '<h3>Баланси з кабінетами:</h3>';
+            
+            cabinets.forEach(cab => {
+                if (cab !== currentCabinet) {
+                    const balance = balances[cab] || 0;
+                    const className = balance >= 0 ? 'debt-positive' : 'debt-negative';
+                    const text = balance >= 0 ? `+${balance.toFixed(2)}` : balance.toFixed(2);
+                    html += `
+                        <div class="debt-item">
+                            <span>${cab}</span>
+                            <span class="${className}">${text} USDT</span>
+                        </div>
+                    `;
+                }
+            });
+
+            debtInfo.innerHTML = html;
+        }
+
+        async function updateOrdersArea() {
+            const [ordersRes, requestsRes, withdrawalsRes] = await Promise.all([
+                fetch(`${API_URL}/orders/${currentCabinet}`),
+                fetch(`${API_URL}/order-requests`),
+                fetch(`${API_URL}/withdrawals/${currentCabinet}`)
+            ]);
+
+            const orders = await ordersRes.json();
+            const requests = await requestsRes.json();
+            const withdrawals = await withdrawalsRes.json();
+            
+            // Перевіряємо нові дані тільки якщо це не перше завантаження
+            const isFirstLoad = previousOrders.length === 0 && previousRequests.length === 0 && previousWithdrawals.length === 0;
+            
+            if (!isFirstLoad) {
+                checkNewOrders(orders);
+                checkNewRequests(requests);
+                checkNewWithdrawals(withdrawals);
+            } else {
+                console.log('First load - skipping notifications');
+                // Перший раз - просто зберігаємо
+                previousOrders = [...orders];
+                previousRequests = [...requests];
+                previousWithdrawals = [...withdrawals];
+            }
+
+            const ordersArea = document.getElementById('ordersArea');
+            ordersArea.innerHTML = '';
+
+            const columns = {};
+
+            // Вхідні ордери
+            const incomingOrders = orders.filter(o => o.to_cabinet === currentCabinet);
+            incomingOrders.forEach(order => {
+                if (!columns[order.from_cabinet]) {
+                    columns[order.from_cabinet] = { incoming: [], outgoing: [], requests: [], outgoingRequests: [], withdrawals: [] };
+                }
+                columns[order.from_cabinet].incoming.push(order);
+            });
+
+            // Вихідні ордери
+            const outgoingOrders = orders.filter(o => o.from_cabinet === currentCabinet);
+            outgoingOrders.forEach(order => {
+                if (!columns[order.to_cabinet]) {
+                    columns[order.to_cabinet] = { incoming: [], outgoing: [], requests: [], outgoingRequests: [], withdrawals: [] };
+                }
+                columns[order.to_cabinet].outgoing.push(order);
+            });
+
+            // Запити на ордери які ми відправили іншим (щоб заповнили)
+            const myRequests = requests.filter(r => r.to_cabinet === currentCabinet && r.remaining_amount > 0);
+            myRequests.forEach(request => {
+                if (!columns[request.from_cabinet]) {
+                    columns[request.from_cabinet] = { incoming: [], outgoing: [], requests: [], outgoingRequests: [], withdrawals: [] };
+                }
+                columns[request.from_cabinet].requests.push(request);
+            });
+
+            // Запити на ордери які ми створили (наші вихідні запити)
+            const outgoingRequests = requests.filter(r => r.from_cabinet === currentCabinet && r.remaining_amount > 0);
+            outgoingRequests.forEach(request => {
+                if (!columns[request.to_cabinet]) {
+                    columns[request.to_cabinet] = { incoming: [], outgoing: [], requests: [], outgoingRequests: [], withdrawals: [] };
+                }
+                columns[request.to_cabinet].outgoingRequests.push(request);
+            });
+
+            // Виводи
+            const incomingWithdrawals = withdrawals.filter(w => w.to_cabinet === currentCabinet);
+            const outgoingWithdrawals = withdrawals.filter(w => w.from_cabinet === currentCabinet);
+
+            incomingWithdrawals.forEach(w => {
+                if (!columns[w.from_cabinet]) {
+                    columns[w.from_cabinet] = { incoming: [], outgoing: [], requests: [], outgoingRequests: [], withdrawals: [] };
+                }
+                columns[w.from_cabinet].withdrawals.push(w);
+            });
+
+            outgoingWithdrawals.forEach(w => {
+                if (!columns[w.to_cabinet]) {
+                    columns[w.to_cabinet] = { incoming: [], outgoing: [], requests: [], outgoingRequests: [], withdrawals: [] };
+                }
+                columns[w.to_cabinet].withdrawals.push(w);
+            });
+
+            // Створення колонок
+            Object.keys(columns).forEach(cabinet => {
+                const column = columns[cabinet];
+                const columnDiv = document.createElement('div');
+                columnDiv.className = 'order-column';
+
+                let html = `<h3>${cabinet}</h3>`;
+
+                // Запити які ми відправили (для заповнення іншим кабінетом)
+                column.requests.forEach(request => {
+                    html += `
+                        <div class="order-card request-card" onclick="openAddOrderDetails(${request.id})">
+                            <div class="order-detail" style="font-size: 0.85em; color: #868e96;">🕐 ${formatShortDateTime(request.created_at)}</div>
+                            <div class="order-detail"><strong>📋 Запит на ордери</strong></div>
+                            <div class="order-detail">Залишилось: <strong>${parseFloat(request.remaining_amount).toFixed(2)} USDT</strong></div>
+                            <div class="order-detail">Тип: ${request.type === 'card' ? 'Картка' : request.type === 'iban' ? 'IBAN' : 'CVU'}</div>
+                            <div class="order-detail" style="font-size: 0.85em; color: #868e96;">Натисніть для додавання ордеру</div>
+                        </div>
+                    `;
+                });
+
+                // Наші вихідні запити (які ми створили) - з кнопкою відміни
+                column.outgoingRequests.forEach(request => {
+                    html += `
+                        <div class="order-card" style="background: #e3f2fd; border-left-color: #2196f3;">
+                            <div class="order-detail" style="font-size: 0.85em; color: #868e96;">🕐 ${formatShortDateTime(request.created_at)}</div>
+                            <div class="order-detail"><strong>📤 Мій запит на ордери</strong></div>
+                            <div class="order-detail">Запрошено: <strong>${parseFloat(request.amount).toFixed(2)} USDT</strong></div>
+                            <div class="order-detail">Залишилось: <strong>${parseFloat(request.remaining_amount).toFixed(2)} USDT</strong></div>
+                            <div class="order-detail">Тип: ${request.type === 'card' ? 'Картка' : request.type === 'iban' ? 'IBAN' : 'CVU'}</div>
+                            <div class="order-actions">
+                                <button class="order-btn cancel" onclick="cancelOrderRequest(${request.id})" style="flex: 1;">✗ Відмінити запит</button>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                // Вхідні ордери
+                column.incoming.forEach(order => {
+                    html += generateOrderCard(order, 'incoming');
+                });
+
+                // Вихідні ордери
+                column.outgoing.forEach(order => {
+                    html += generateOrderCard(order, 'outgoing');
+                });
+
+                // Виводи
+                column.withdrawals.forEach(withdrawal => {
+                    html += generateWithdrawalCard(withdrawal);
+                });
+
+                columnDiv.innerHTML = html;
+                ordersArea.appendChild(columnDiv);
+            });
+        }
+
+        function generateOrderCard(order, direction) {
+            let statusClass = order.status === 'pending' ? 'pending' : 
+                            order.status === 'completed' ? 'completed' : 'cancelled';
+            
+            let html = `<div class="order-card ${statusClass}">`;
+            html += `<div class="order-detail" style="font-size: 0.85em; color: #868e96;">🕐 ${formatShortDateTime(order.created_at)}</div>`;
+
+            if (order.type === 'card') {
+                html += `
+                    <div class="order-detail" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap;">
+                        <div style="flex: 1; min-width: 0;">
+                            <strong>Номер картки:</strong> 
+                            <span style="font-family: monospace; font-size: 1.05em;">${order.card_number}</span>
+                        </div>
+                        <button onclick="copyToClipboard('${order.card_number}', this)" 
+                                style="flex-shrink: 0; margin-left: 10px; padding: 6px 12px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85em; white-space: nowrap;">
+                            📋 Копіювати
+                        </button>
+                    </div>
+                    <div class="order-detail"><strong>Сума:</strong> ${order.amount_local} UAH</div>
+                `;
+            } else if (order.type === 'iban') {
+                html += `
+                    <div class="order-detail" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap;">
+                        <div style="flex: 1; min-width: 0;">
+                            <strong>IBAN:</strong> 
+                            <span style="font-family: monospace; font-size: 1.05em;">${order.iban}</span>
+                        </div>
+                        <button onclick="copyToClipboard('${order.iban}', this)" 
+                                style="flex-shrink: 0; margin-left: 10px; padding: 6px 12px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85em; white-space: nowrap;">
+                            📋 Копіювати
+                        </button>
+                    </div>
+                    <div class="order-detail"><strong>Податковий №:</strong> ${order.tax_number}</div>
+                    <div class="order-detail"><strong>ПІБ:</strong> ${order.full_name}</div>
+                    <div class="order-detail"><strong>Сума:</strong> ${order.amount_local} UAH</div>
+                `;
+            } else if (order.type === 'cvu') {
+                html += `
+                    <div class="order-detail" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap;">
+                        <div style="flex: 1; min-width: 0;">
+                            <strong>CVU:</strong> 
+                            <span style="font-family: monospace; font-size: 1.05em;">${order.cvu}</span>
+                        </div>
+                        <button onclick="copyToClipboard('${order.cvu}', this)" 
+                                style="flex-shrink: 0; margin-left: 10px; padding: 6px 12px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85em; white-space: nowrap;">
+                            📋 Копіювати
+                        </button>
+                    </div>
+                    <div class="order-detail"><strong>ПІБ:</strong> ${order.full_name}</div>
+                    <div class="order-detail"><strong>Сума:</strong> ${order.amount_local} ARS</div>
+                `;
+            }
+
+            html += `
+                <div class="order-detail"><strong>USDT:</strong> ${parseFloat(order.amount_usdt).toFixed(2)}</div>
+                <div class="order-detail"><strong>Примітка:</strong> ${order.note || '-'}</div>
+            `;
+
+            if (order.status === 'pending' && direction === 'incoming') {
+                html += `
+                    <div class="order-actions">
+                        <button class="order-btn paid" onclick="markAsPaid(${order.id})">✓ Сплачено</button>
+                        <button class="order-btn receipt" onclick="openReceiptUpload(${order.id})">📄 З квитанцією</button>
+                        <button class="order-btn cancel" onclick="cancelOrder(${order.id})">✗ Відмінити</button>
+                    </div>
+                `;
+            } else if (order.status === 'completed') {
+                html += `<div class="order-status status-completed">✓ Сплачено</div>`;
+                if (order.receipts) {
+                    html += `<button class="order-btn receipt" style="margin-top: 10px;" onclick="viewReceipts(${order.id})">📄 Переглянути квитанції</button>`;
+                }
+                html += `
+                    <div class="order-actions">
+                        <button class="order-btn close" onclick="closeOrder(${order.id})">✗</button>
+                    </div>
+                `;
+            } else if (order.status === 'cancelled') {
+                html += `
+                    <div class="order-status status-cancelled">✗ Відмінено</div>
+                    <div class="order-actions">
+                        <button class="order-btn close" onclick="closeOrder(${order.id})">✗</button>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+            return html;
+        }
+
+        function generateWithdrawalCard(withdrawal) {
+            const isIncoming = withdrawal.to_cabinet === currentCabinet;
+            const isOutgoing = withdrawal.from_cabinet === currentCabinet;
+            let statusClass = withdrawal.status === 'pending' ? 'pending' : 'completed';
+            
+            let html = `<div class="order-card ${statusClass}">`;
+            html += `<div class="order-detail" style="font-size: 0.85em; color: #868e96;">🕐 ${formatShortDateTime(withdrawal.created_at)}</div>`;
+            html += `<div class="order-detail"><strong>💸 Запит на вивід</strong></div>`;
+            html += `<div class="order-detail"><strong>Сума:</strong> ${parseFloat(withdrawal.amount).toFixed(2)} USDT</div>`;
+            html += `<div class="order-detail"><strong>Адреса:</strong> ${withdrawal.address}</div>`;
+
+            if (withdrawal.status === 'pending') {
+                if (isIncoming) {
+                    html += `
+                        <div class="order-actions">
+                            <button class="order-btn paid" onclick="openTxidInput(${withdrawal.id})">✓ Сплачено</button>
+                        </div>
+                    `;
+                } else if (isOutgoing) {
+                    html += `
+                        <div class="order-actions">
+                            <button class="order-btn cancel" onclick="cancelWithdrawal(${withdrawal.id})">✗ Відмінити</button>
+                        </div>
+                    `;
+                }
+            } else if (withdrawal.status === 'completed') {
+                html += `<div class="order-status status-completed">✓ Оплачено</div>`;
+                html += `
+                    <div class="order-detail" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap;">
+                        <div style="flex: 1; min-width: 0; overflow: hidden;">
+                            <strong>TxID:</strong> 
+                            <span style="font-family: monospace; font-size: 0.95em; word-break: break-all;">${withdrawal.txid}</span>
+                        </div>
+                        <button onclick="copyToClipboard('${withdrawal.txid}', this)" 
+                                style="flex-shrink: 0; margin-left: 10px; padding: 6px 12px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85em; white-space: nowrap;">
+                            📋 Копіювати
+                        </button>
+                    </div>
+                `;
+                html += `
+                    <div class="order-actions">
+                        <button class="order-btn close" onclick="closeWithdrawal(${withdrawal.id})">✗</button>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+            return html;
+        }
+    </script>
+</body>
+</html>
